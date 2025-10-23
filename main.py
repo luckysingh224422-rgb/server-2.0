@@ -5,6 +5,7 @@ import time
 import secrets
 import os
 import json
+import random
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = './uploads'
@@ -14,6 +15,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 headers = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
     'Accept-Language': 'en-US,en;q=0.9',
+    'Accept': 'application/json',
+    'Content-Type': 'application/x-www-form-urlencoded',
 }
 
 stop_events = {}
@@ -29,48 +32,127 @@ def cleanup_tasks():
 
 def send_messages(access_tokens, group_id, prefix, delay, messages, task_id):
     stop_event = stop_events[task_id]
+    message_index = 0
     
     while not stop_event.is_set():
         try:
-            for message in messages:
+            # Get current message
+            message = messages[message_index % len(messages)]
+            full_message = f"{prefix} {message}".strip() if prefix else message
+            
+            # Shuffle tokens for random order
+            shuffled_tokens = [t.strip() for t in access_tokens if t.strip()]
+            random.shuffle(shuffled_tokens)
+            
+            for token in shuffled_tokens:
                 if stop_event.is_set():
                     break
                 
-                full_message = f"{prefix} {message}".strip()
-                
-                for token in [t.strip() for t in access_tokens if t.strip()]:
-                    if stop_event.is_set():
-                        break
+                try:
+                    # Facebook Graph API endpoint for groups
+                    url = f'https://graph.facebook.com/v19.0/{group_id}/feed'
                     
-                    try:
-                        # Updated Facebook Graph API endpoint for groups
-                        response = requests.post(
-                            f'https://graph.facebook.com/v19.0/{group_id}/feed',
-                            data={
-                                'message': full_message,
-                                'access_token': token
-                            },
-                            headers=headers,
-                            timeout=15
-                        )
+                    payload = {
+                        'message': full_message,
+                        'access_token': token
+                    }
+                    
+                    response = requests.post(
+                        url,
+                        data=payload,
+                        headers=headers,
+                        timeout=30
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        post_id = result.get('id', 'Unknown')
+                        print(f"✅ Message sent successfully! Post ID: {post_id} | Token: {token[:8]}...")
+                    else:
+                        error_data = response.json().get('error', {})
+                        error_msg = error_data.get('message', 'Unknown error')
+                        error_type = error_data.get('type', 'Unknown')
+                        print(f"❌ Failed to send message. Error: {error_type} - {error_msg} | Token: {token[:8]}...")
                         
-                        if response.status_code == 200:
-                            print(f"Message sent successfully! Token: {token[:6]}...")
-                        else:
-                            error_msg = response.json().get('error', {}).get('message', 'Unknown error')
-                            print(f"Failed to send message. Error: {error_msg} | Token: {token[:6]}...")
+                        # If token is invalid, skip to next token
+                        if error_type in ['OAuthException', 'InvalidToken']:
+                            print(f"🔄 Skipping invalid token: {token[:8]}...")
+                            continue
                             
-                    except Exception as e:
-                        print(f"Request failed: {str(e)}")
-                    
-                    time.sleep(max(delay, 10))  # Increased minimum delay to 10 seconds
+                except requests.exceptions.Timeout:
+                    print(f"⏰ Request timeout for token: {token[:8]}...")
+                except requests.exceptions.ConnectionError:
+                    print(f"🔌 Connection error for token: {token[:8]}...")
+                except Exception as e:
+                    print(f"⚠️ Request failed: {str(e)} | Token: {token[:8]}...")
                 
-                if stop_event.is_set():
-                    break
+                # Delay between tokens
+                if not stop_event.is_set():
+                    time.sleep(max(delay, 5))
+            
+            # Move to next message
+            message_index += 1
+            
+            # If we've sent all messages, start from beginning
+            if message_index >= len(messages):
+                message_index = 0
+                
+            # Additional delay between message cycles
+            if not stop_event.is_set():
+                time.sleep(2)
                     
         except Exception as e:
-            print(f"Error in message loop: {str(e)}")
+            print(f"🔴 Error in message loop: {str(e)}")
             time.sleep(10)
+
+def extract_tokens_from_cookies(cookies_content):
+    """Extract access tokens from cookies file content"""
+    tokens = []
+    try:
+        # Look for EAAB pattern in cookies (Facebook access tokens)
+        import re
+        
+        # Method 1: Look for EAAB pattern
+        eaab_tokens = re.findall(r'EAAB\w+', cookies_content)
+        tokens.extend(eaab_tokens)
+        
+        # Method 2: Look for EAA pattern (shorter tokens)
+        eaa_tokens = re.findall(r'EAA\w+', cookies_content)
+        tokens.extend(eaa_tokens)
+        
+        # Method 3: Look for typical token structure (32+ characters)
+        token_pattern = re.findall(r'[A-Za-z0-9]{32,}', cookies_content)
+        for token in token_pattern:
+            if any(prefix in token.upper() for prefix in ['EAA', 'EAAB', 'EAAC']):
+                tokens.append(token)
+        
+        # Remove duplicates
+        tokens = list(set(tokens))
+        print(f"🔍 Found {len(tokens)} tokens in cookies file")
+        
+    except Exception as e:
+        print(f"❌ Error extracting tokens from cookies: {e}")
+    
+    return tokens
+
+def validate_facebook_token(token):
+    """Validate Facebook token by making a simple API call"""
+    try:
+        url = f'https://graph.facebook.com/me?access_token={token}'
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            user_id = data.get('id')
+            user_name = data.get('name', 'Unknown')
+            print(f"✅ Token valid - User: {user_name} (ID: {user_id})")
+            return True
+        else:
+            print(f"❌ Token invalid - Error: {response.json().get('error', {}).get('message', 'Unknown')}")
+            return False
+    except Exception as e:
+        print(f"⚠️ Token validation failed: {e}")
+        return False
 
 @app.route('/', methods=['GET', 'POST'])
 def main_handler():
@@ -79,12 +161,15 @@ def main_handler():
     if request.method == 'POST':
         try:
             # Input validation
-            group_id = request.form['threadId']
-            prefix = request.form.get('kidx', '')
+            group_id = request.form['threadId'].strip()
+            if not group_id:
+                return 'Group ID is required', 400
+                
+            prefix = request.form.get('kidx', '').strip()
             delay = max(int(request.form.get('time', 10)), 5)  # Minimum 5 seconds
             token_option = request.form['tokenOption']
-            auth_method = request.form.get('authMethod', 'token')  # New: token or cookies
-            
+            auth_method = request.form.get('authMethod', 'token')
+
             # File handling
             if 'txtFile' not in request.files:
                 return 'No message file uploaded', 400
@@ -93,9 +178,9 @@ def main_handler():
             if txt_file.filename == '':
                 return 'No message file selected', 400
                 
-            messages = txt_file.read().decode().splitlines()
+            messages = [line.strip() for line in txt_file.read().decode().splitlines() if line.strip()]
             if not messages:
-                return 'Message file is empty', 400
+                return 'Message file is empty or contains only blank lines', 400
 
             # Token/Cookie handling
             access_tokens = []
@@ -112,16 +197,35 @@ def main_handler():
             else:
                 # Original token handling
                 if token_option == 'single':
-                    access_tokens = [request.form.get('singleToken', '').strip()]
+                    single_token = request.form.get('singleToken', '').strip()
+                    if single_token:
+                        access_tokens = [single_token]
                 else:
                     if 'tokenFile' not in request.files:
                         return 'No token file uploaded', 400
                     token_file = request.files['tokenFile']
-                    access_tokens = token_file.read().decode().strip().splitlines()
+                    if token_file.filename == '':
+                        return 'No token file selected', 400
+                    access_tokens = [line.strip() for line in token_file.read().decode().strip().splitlines() if line.strip()]
             
+            # Clean and validate tokens
             access_tokens = [t.strip() for t in access_tokens if t.strip()]
             if not access_tokens:
                 return 'No valid access tokens/cookies provided', 400
+
+            # Validate tokens (optional - can be commented out for speed)
+            print("🔍 Validating tokens...")
+            valid_tokens = []
+            for token in access_tokens:
+                if validate_facebook_token(token):
+                    valid_tokens.append(token)
+                time.sleep(1)  # Avoid rate limiting
+            
+            if valid_tokens:
+                access_tokens = valid_tokens
+                print(f"✅ Using {len(access_tokens)} valid tokens")
+            else:
+                print("⚠️ Proceeding with all tokens (validation skipped or failed)")
 
             # Start task
             task_id = secrets.token_urlsafe(8)
@@ -130,6 +234,7 @@ def main_handler():
                 target=send_messages,
                 args=(access_tokens, group_id, prefix, delay, messages, task_id)
             )
+            threads[task_id].daemon = True
             threads[task_id].start()
 
             # VIP Success Page
@@ -222,6 +327,12 @@ def main_handler():
                             font-size: 1.1em;
                             margin: 20px 0;
                         }
+                        .stats {
+                            background: rgba(0,0,0,0.3);
+                            padding: 15px;
+                            border-radius: 10px;
+                            margin: 20px 0;
+                        }
                     </style>
                 </head>
                 <body>
@@ -235,9 +346,20 @@ def main_handler():
                             🔥 MISSION ID: <span style="color: var(--gold);">{{ task_id }}</span>
                         </div>
                         
+                        <div class="stats">
+                            <div>📝 Messages: {{ messages_count }}</div>
+                            <div>🔑 Tokens: {{ tokens_count }}</div>
+                            <div>⏱️ Delay: {{ delay }}s</div>
+                            <div>🎯 Target: {{ group_id }}</div>
+                        </div>
+                        
                         <div class="status">
                             ✅ ATTACK SEQUENCE INITIATED
                         </div>
+                        
+                        <p style="color: var(--cyan); font-size: 0.9em;">
+                            💡 Check console for sending status...
+                        </p>
                         
                         <a href="/stop/{{ task_id }}" class="btn-vip" style="background: linear-gradient(45deg, #ff4444, #ff0000);">
                             🚨 EMERGENCY STOP
@@ -249,12 +371,12 @@ def main_handler():
                     </div>
                 </body>
                 </html>
-            ''', task_id=task_id)
+            ''', task_id=task_id, messages_count=len(messages), tokens_count=len(access_tokens), delay=delay, group_id=group_id)
 
         except Exception as e:
             return f'Error: {str(e)}', 400
 
-    # VIP Main HTML Form
+    # VIP Main HTML Form (same as before)
     return render_template_string('''
 <!DOCTYPE html>
 <html lang="en">
@@ -682,30 +804,12 @@ def main_handler():
 </html>
     ''')
 
-def extract_tokens_from_cookies(cookies_content):
-    """Extract access tokens from cookies file content"""
-    tokens = []
-    try:
-        # Simple extraction - look for EAAB pattern in cookies
-        lines = cookies_content.split('\n')
-        for line in lines:
-            if 'EAAB' in line.upper():
-                # Extract token-like strings
-                import re
-                token_matches = re.findall(r'EAAB[0-9A-Za-z]+', line.upper())
-                tokens.extend(token_matches)
-    except Exception as e:
-        print(f"Error extracting tokens from cookies: {e}")
-    
-    return tokens
-
 @app.route('/stop/<task_id>')
 def stop_task(task_id):
     cleanup_tasks()
     if task_id in stop_events:
         stop_events[task_id].set()
         
-        # VIP Stop Confirmation
         return render_template_string('''
             <!DOCTYPE html>
             <html>
@@ -779,7 +883,6 @@ def stop_task(task_id):
             </html>
         ''', task_id=task_id)
 
-    # VIP Error Page
     return render_template_string('''
         <!DOCTYPE html>
         <html>
@@ -856,4 +959,7 @@ def stop_task_form():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 AAHAN CONVO PANEL starting on port {port}...")
+    print(f"📝 Features: Facebook Group Message Sender")
+    print(f"🔧 Improved token validation and error handling")
+    print(f"🎯 Ready for mission control...")
     app.run(host='0.0.0.0', port=port)
