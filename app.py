@@ -1,6 +1,5 @@
 from flask import Flask, request, render_template_string
 import requests
-from threading import Thread, Event
 import time
 import secrets
 import os
@@ -9,226 +8,240 @@ from datetime import datetime
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = './uploads'
-app.config['SECRET_KEY'] = secrets.token_hex(32)
+app.config['SECRET_KEY'] = 'your-secret-key-here'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Simple headers
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-}
+# Global variables to track tasks
+active_tasks = {}
 
-stop_events = {}
-threads = {}
-
-def check_token_validity(access_token):
-    """Check if Facebook access token is valid"""
+def check_facebook_token(token):
+    """Check if Facebook token is valid"""
     try:
-        response = requests.get(
-            'https://graph.facebook.com/me',
-            params={'access_token': access_token, 'fields': 'id,name'},
-            headers=headers,
-            timeout=10
-        )
+        url = f"https://graph.facebook.com/v19.0/me?access_token={token}"
+        response = requests.get(url, timeout=10)
         return response.status_code == 200
     except:
         return False
 
-def send_to_facebook(access_token, group_id, message, image_path=None):
-    """Send message to Facebook with optional image"""
+def send_facebook_post(token, group_id, message, image_path=None):
+    """Send post to Facebook group/page"""
     try:
         if image_path and os.path.exists(image_path):
             # Send with image
-            with open(image_path, 'rb') as img_file:
-                files = {'source': img_file}
+            print(f"📸 Sending with image: {image_path}")
+            with open(image_path, 'rb') as img:
+                files = {'source': img}
                 data = {
                     'message': message,
-                    'access_token': access_token
+                    'access_token': token
                 }
                 response = requests.post(
                     f'https://graph.facebook.com/v19.0/{group_id}/photos',
                     files=files,
                     data=data,
-                    headers=headers,
                     timeout=30
                 )
         else:
             # Send text only
+            print(f"📝 Sending text only")
             response = requests.post(
                 f'https://graph.facebook.com/v19.0/{group_id}/feed',
                 data={
                     'message': message,
-                    'access_token': access_token
+                    'access_token': token
                 },
-                headers=headers,
                 timeout=15
             )
         
+        print(f"📤 Response: {response.status_code}")
         if response.status_code == 200:
-            print(f"✅ Success! Token: {access_token[:10]}...")
+            print("✅ Post successful!")
             return True
         else:
             print(f"❌ Failed: {response.text}")
             return False
             
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"🔥 Error: {str(e)}")
         return False
 
-def send_messages_worker(access_tokens, group_id, prefix, delay, messages, task_id, image_paths):
-    """Main worker function to send messages"""
-    stop_event = stop_events[task_id]
+def start_sending_task(task_data):
+    """Start sending messages in background"""
+    task_id = task_data['task_id']
     
-    task_data = {
-        'valid_tokens': [],
-        'invalid_tokens': [],
-        'sent_count': 0,
-        'last_update': datetime.now().isoformat()
-    }
-    
-    # Validate tokens
-    valid_tokens = []
-    for token in access_tokens:
-        if check_token_validity(token):
-            valid_tokens.append(token)
-            task_data['valid_tokens'].append(token)
-        else:
-            task_data['invalid_tokens'].append(token)
-    
-    if not valid_tokens:
-        print("❌ No valid tokens found!")
-        return
-    
-    print(f"✅ Starting with {len(valid_tokens)} valid tokens, {len(messages)} messages, {len(image_paths)} images")
-    
-    message_index = 0
-    image_index = 0
-    
-    while not stop_event.is_set() and message_index < len(messages):
-        try:
-            current_message = f"{prefix} {messages[message_index]}".strip()
-            current_image = image_paths[image_index % len(image_paths)] if image_paths else None
+    try:
+        print(f"🚀 Starting task {task_id}")
+        print(f"📋 Target: {task_data['group_id']}")
+        print(f"💬 Messages: {len(task_data['messages'])}")
+        print(f"🖼️ Images: {len(task_data['image_paths'])}")
+        print(f"🔑 Tokens: {len(task_data['valid_tokens'])}")
+        
+        message_count = 0
+        image_count = 0
+        
+        while message_count < len(task_data['messages']) and active_tasks[task_id]['running']:
+            current_message = task_data['messages'][message_count]
+            full_message = f"{task_data['prefix']} {current_message}".strip()
             
-            print(f"📨 Sending message {message_index + 1}/{len(messages)} with image {image_index + 1}")
+            # Get current image (cycle through available images)
+            current_image = None
+            if task_data['image_paths']:
+                current_image = task_data['image_paths'][image_count % len(task_data['image_paths'])]
             
-            for token in valid_tokens:
-                if stop_event.is_set():
+            print(f"\n📨 Sending {message_count + 1}/{len(task_data['messages'])}")
+            print(f"📝 Message: {full_message[:50]}...")
+            print(f"🖼️ Image: {current_image}")
+            
+            # Send with each valid token
+            for token in task_data['valid_tokens']:
+                if not active_tasks[task_id]['running']:
                     break
                     
-                success = send_to_facebook(token, group_id, current_message, current_image)
+                success = send_facebook_post(token, task_data['group_id'], full_message, current_image)
                 if success:
-                    task_data['sent_count'] += 1
-                    task_data['last_update'] = datetime.now().isoformat()
+                    active_tasks[task_id]['stats']['success'] += 1
+                else:
+                    active_tasks[task_id]['stats']['failed'] += 1
                 
-                # Save progress
-                with open(f'./uploads/progress_{task_id}.json', 'w') as f:
-                    json.dump(task_data, f)
+                # Update last activity
+                active_tasks[task_id]['last_activity'] = datetime.now().isoformat()
                 
-                print(f"⏳ Waiting {delay} seconds...")
-                time.sleep(delay)
+                # Wait before next send
+                if active_tasks[task_id]['running']:
+                    print(f"⏳ Waiting {task_data['delay']} seconds...")
+                    time.sleep(task_data['delay'])
             
-            message_index += 1
-            image_index += 1
-            
-        except Exception as e:
-            print(f"❌ Worker error: {str(e)}")
-            time.sleep(10)
-    
-    print("✅ Task completed!")
+            message_count += 1
+            image_count += 1
+        
+        print(f"✅ Task {task_id} completed!")
+        active_tasks[task_id]['running'] = False
+        active_tasks[task_id]['completed'] = True
+        
+    except Exception as e:
+        print(f"🔥 Task error: {str(e)}")
+        active_tasks[task_id]['running'] = False
+        active_tasks[task_id]['error'] = str(e)
 
 @app.route('/', methods=['GET', 'POST'])
-def main_handler():
+def home():
     if request.method == 'POST':
         try:
             # Get form data
-            group_id = request.form['group_id']
-            prefix = request.form.get('prefix', '')
+            group_id = request.form.get('group_id', '').strip()
+            prefix = request.form.get('prefix', '').strip()
             delay = int(request.form.get('delay', 10))
-            messages_text = request.form['messages']
             
-            # Process tokens
-            token_option = request.form.get('token_option', 'single')
-            if token_option == 'single':
-                access_tokens = [request.form['single_token'].strip()]
-            else:
-                access_tokens = [t.strip() for t in request.form['multi_tokens'].strip().split('\n') if t.strip()]
+            # Get messages
+            messages_text = request.form.get('messages', '')
+            messages = [m.strip() for m in messages_text.split('\n') if m.strip()]
             
-            # Process messages
-            messages = [m.strip() for m in messages_text.strip().split('\n') if m.strip()]
+            # Get tokens
+            token_text = request.form.get('tokens', '')
+            tokens = [t.strip() for t in token_text.split('\n') if t.strip()]
             
-            # Process images
+            # Validate inputs
+            if not group_id:
+                return "❌ Group ID is required"
+            if not messages:
+                return "❌ Messages are required"
+            if not tokens:
+                return "❌ Access tokens are required"
+            
+            # Validate tokens
+            valid_tokens = []
+            invalid_tokens = []
+            
+            print("🔍 Validating tokens...")
+            for token in tokens:
+                if check_facebook_token(token):
+                    valid_tokens.append(token)
+                    print(f"✅ Valid token: {token[:20]}...")
+                else:
+                    invalid_tokens.append(token)
+                    print(f"❌ Invalid token: {token[:20]}...")
+            
+            if not valid_tokens:
+                return "❌ No valid tokens found. Please check your access tokens."
+            
+            # Handle image uploads
             image_paths = []
             if 'images' in request.files:
                 for img_file in request.files.getlist('images'):
                     if img_file and img_file.filename:
-                        filename = f"img_{secrets.token_urlsafe(8)}_{img_file.filename}"
+                        # Save image
+                        filename = f"{secrets.token_hex(8)}_{img_file.filename}"
                         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                         img_file.save(filepath)
                         image_paths.append(filepath)
-                        print(f"✅ Saved image: {filename}")
+                        print(f"✅ Image saved: {filename}")
             
-            # Validate inputs
-            if not access_tokens:
-                return "❌ No access tokens provided"
-            if not messages:
-                return "❌ No messages provided"
-            if not group_id:
-                return "❌ No group ID provided"
+            # Create task
+            task_id = secrets.token_hex(8)
+            task_data = {
+                'task_id': task_id,
+                'group_id': group_id,
+                'prefix': prefix,
+                'delay': delay,
+                'messages': messages,
+                'image_paths': image_paths,
+                'valid_tokens': valid_tokens,
+                'invalid_tokens': invalid_tokens,
+                'start_time': datetime.now().isoformat()
+            }
             
             # Start task
-            task_id = secrets.token_urlsafe(8)
-            stop_events[task_id] = Event()
+            active_tasks[task_id] = {
+                'running': True,
+                'completed': False,
+                'stats': {'success': 0, 'failed': 0},
+                'last_activity': datetime.now().isoformat(),
+                'error': None
+            }
             
-            threads[task_id] = Thread(
-                target=send_messages_worker,
-                args=(access_tokens, group_id, prefix, delay, messages, task_id, image_paths)
-            )
-            threads[task_id].start()
+            # Start background thread
+            import threading
+            thread = threading.Thread(target=start_sending_task, args=(task_data,))
+            thread.daemon = True
+            thread.start()
             
+            # Success response
             return f'''
             <!DOCTYPE html>
             <html>
             <head>
                 <title>Task Started</title>
+                <meta http-equiv="refresh" content="2;url=/status/{task_id}">
                 <style>
                     body {{ 
                         font-family: Arial, sans-serif; 
-                        background: #1a1a2e;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                         color: white;
                         padding: 50px;
                         text-align: center;
                     }}
                     .success {{ 
-                        background: #2ec4b6; 
-                        color: white; 
-                        padding: 20px; 
-                        border-radius: 10px;
+                        background: rgba(255,255,255,0.1); 
+                        padding: 30px; 
+                        border-radius: 15px;
+                        backdrop-filter: blur(10px);
                         margin: 20px auto;
                         max-width: 500px;
                     }}
-                    .info {{ 
-                        background: #ff6b35; 
-                        color: white; 
-                        padding: 15px; 
-                        border-radius: 10px;
-                        margin: 10px auto;
-                        max-width: 500px;
+                    .loading {{
+                        font-size: 18px;
+                        margin: 20px 0;
                     }}
                 </style>
             </head>
             <body>
                 <div class="success">
-                    <h2>✅ TASK STARTED SUCCESSFULLY!</h2>
-                    <p><strong>Task ID:</strong> {task_id}</p>
+                    <h2>🚀 TASK STARTED SUCCESSFULLY!</h2>
+                    <div class="loading">
+                        <p>📋 Task ID: <strong>{task_id}</strong></p>
+                        <p>⏳ Redirecting to status page...</p>
+                    </div>
                 </div>
-                <div class="info">
-                    <p><strong>Target:</strong> {group_id}</p>
-                    <p><strong>Messages:</strong> {len(messages)}</p>
-                    <p><strong>Images:</strong> {len(image_paths)}</p>
-                    <p><strong>Tokens:</strong> {len(access_tokens)}</p>
-                    <p><strong>Delay:</strong> {delay}s</p>
-                </div>
-                <p>Check console for progress updates...</p>
-                <a href="/" style="color: #2ec4b6;">← Back to Home</a>
             </body>
             </html>
             '''
@@ -236,168 +249,252 @@ def main_handler():
         except Exception as e:
             return f"❌ Error: {str(e)}"
     
-    # Simple HTML form
+    # Main form
     return '''
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Facebook Message Sender</title>
+        <title>Facebook Auto Poster</title>
         <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                background: #1a1a2e;
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: #333;
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1000px;
+                margin: 0 auto;
+                background: rgba(255,255,255,0.95);
+                border-radius: 15px;
+                padding: 30px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            }
+            h1 {
+                text-align: center;
+                color: #764ba2;
+                margin-bottom: 30px;
+                font-size: 2.5em;
+            }
+            .form-group {
+                margin-bottom: 25px;
+            }
+            label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 600;
+                color: #555;
+            }
+            input, textarea, select {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-size: 16px;
+                transition: border-color 0.3s;
+            }
+            input:focus, textarea:focus, select:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+            textarea {
+                min-height: 100px;
+                resize: vertical;
+            }
+            .btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 15px 30px;
+                border: none;
+                border-radius: 8px;
+                font-size: 18px;
+                font-weight: 600;
+                cursor: pointer;
+                width: 100%;
+                transition: transform 0.2s;
+            }
+            .btn:hover {
+                transform: translateY(-2px);
+            }
+            .stats {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+                margin-top: 30px;
+            }
+            .stat-card {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
                 padding: 20px;
-                max-width: 800px;
-                margin: 0 auto;
-            }
-            .container { 
-                background: rgba(255,255,255,0.1); 
-                padding: 30px; 
-                border-radius: 15px;
-                backdrop-filter: blur(10px);
-            }
-            h1 { 
-                color: #ff6b35; 
+                border-radius: 10px;
                 text-align: center;
+            }
+            .instructions {
+                background: #f8f9fa;
+                padding: 20px;
+                border-radius: 10px;
                 margin-bottom: 30px;
+                border-left: 4px solid #667eea;
             }
-            .form-group { 
-                margin-bottom: 20px; 
-            }
-            label { 
-                display: block; 
-                margin-bottom: 5px; 
-                color: #2ec4b6;
-                font-weight: bold;
-            }
-            input, textarea, select { 
-                width: 100%; 
-                padding: 10px; 
-                border: 2px solid #ff6b35; 
-                border-radius: 5px; 
-                background: rgba(255,255,255,0.1);
-                color: white;
-            }
-            button { 
-                background: #ff6b35; 
-                color: white; 
-                padding: 15px 30px; 
-                border: none; 
-                border-radius: 5px; 
-                cursor: pointer;
-                font-size: 16px;
-                font-weight: bold;
-                width: 100%;
-                margin-top: 20px;
-            }
-            button:hover { 
-                background: #e71d36; 
-            }
-            .tab { display: none; }
-            .tab.active { display: block; }
-            .tab-buttons { 
-                display: flex; 
-                margin-bottom: 20px;
-            }
-            .tab-btn { 
-                flex: 1; 
-                padding: 10px; 
-                background: #2ec4b6; 
-                border: none; 
-                color: white;
-                cursor: pointer;
-            }
-            .tab-btn.active { 
-                background: #ff6b35; 
+            .instructions h3 {
+                color: #764ba2;
+                margin-bottom: 10px;
             }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>🚀 Facebook Message Sender</h1>
+            <h1>🚀 Facebook Auto Poster</h1>
+            
+            <div class="instructions">
+                <h3>📋 How to Use:</h3>
+                <p>1. Get Facebook Access Token from developers.facebook.com</p>
+                <p>2. Enter Group/Page ID where you want to post</p>
+                <p>3. Add your messages (one per line)</p>
+                <p>4. Upload images (optional)</p>
+                <p>5. Set delay between posts</p>
+                <p>6. Click START POSTING!</p>
+            </div>
             
             <form method="post" enctype="multipart/form-data">
                 <div class="form-group">
-                    <label>Group/Page ID:</label>
-                    <input type="text" name="group_id" placeholder="Enter Facebook Group ID or Page ID" required>
+                    <label>🔑 Facebook Group/Page ID:</label>
+                    <input type="text" name="group_id" placeholder="e.g., 123456789012345" required>
                 </div>
                 
                 <div class="form-group">
-                    <label>Message Prefix (Optional):</label>
+                    <label>📝 Message Prefix (Optional):</label>
                     <input type="text" name="prefix" placeholder="Add prefix to all messages">
                 </div>
                 
                 <div class="form-group">
-                    <label>Delay between sends (seconds):</label>
+                    <label>⏰ Delay between posts (seconds):</label>
                     <input type="number" name="delay" value="10" min="5" required>
                 </div>
                 
                 <div class="form-group">
-                    <label>Messages (one per line):</label>
-                    <textarea name="messages" rows="5" placeholder="Enter your messages, one per line" required></textarea>
+                    <label>💬 Messages (one per line):</label>
+                    <textarea name="messages" placeholder="Enter your messages here, one message per line&#10;Example:&#10;Hello world!&#10;This is test message&#10;Another message" required></textarea>
                 </div>
                 
                 <div class="form-group">
-                    <label>Images (Optional, multiple allowed):</label>
-                    <input type="file" name="images" multiple accept=".jpg,.jpeg,.png,.gif">
+                    <label>🖼️ Images (Optional, multiple allowed):</label>
+                    <input type="file" name="images" multiple accept="image/*">
                 </div>
                 
                 <div class="form-group">
-                    <label>Access Token Option:</label>
-                    <select name="token_option" id="tokenOption">
-                        <option value="single">Single Token</option>
-                        <option value="multiple">Multiple Tokens</option>
-                    </select>
+                    <label>🔐 Facebook Access Tokens (one per line):</label>
+                    <textarea name="tokens" placeholder="Paste your Facebook access tokens here, one token per line&#10;Example:&#10;EAABwzLixnjYBO...&#10;EAABwzLixnjYBO..." required></textarea>
                 </div>
                 
-                <div class="form-group" id="singleTokenSection">
-                    <label>Facebook Access Token:</label>
-                    <textarea name="single_token" rows="3" placeholder="Paste your Facebook access token" required></textarea>
-                </div>
-                
-                <div class="form-group" id="multiTokenSection" style="display:none">
-                    <label>Multiple Tokens (one per line):</label>
-                    <textarea name="multi_tokens" rows="5" placeholder="Enter multiple tokens, one per line"></textarea>
-                </div>
-                
-                <button type="submit">🚀 START SENDING</button>
+                <button type="submit" class="btn">🚀 START POSTING</button>
             </form>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>📊 Active Tasks</h3>
+                    <p>''' + str(len([t for t in active_tasks.values() if t['running']])) + '''</p>
+                </div>
+                <div class="stat-card">
+                    <h3>✅ Completed</h3>
+                    <p>''' + str(len([t for t in active_tasks.values() if t['completed']])) + '''</p>
+                </div>
+            </div>
         </div>
-        
-        <script>
-            document.getElementById('tokenOption').addEventListener('change', function() {
-                var singleSection = document.getElementById('singleTokenSection');
-                var multiSection = document.getElementById('multiTokenSection');
-                
-                if (this.value === 'single') {
-                    singleSection.style.display = 'block';
-                    multiSection.style.display = 'none';
-                    document.querySelector('[name="single_token"]').required = true;
-                    document.querySelector('[name="multi_tokens"]').required = false;
-                } else {
-                    singleSection.style.display = 'none';
-                    multiSection.style.display = 'block';
-                    document.querySelector('[name="single_token"]').required = false;
-                    document.querySelector('[name="multi_tokens"]').required = true;
-                }
-            });
-        </script>
+    </body>
+    </html>
+    '''
+
+@app.route('/status/<task_id>')
+def task_status(task_id):
+    if task_id not in active_tasks:
+        return "Task not found"
+    
+    task = active_tasks[task_id]
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Task Status</title>
+        <meta http-equiv="refresh" content="5">
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 50px;
+                text-align: center;
+            }
+            .status-card { 
+                background: rgba(255,255,255,0.1); 
+                padding: 30px; 
+                border-radius: 15px;
+                backdrop-filter: blur(10px);
+                margin: 20px auto;
+                max-width: 600px;
+            }
+            .running { color: #4CAF50; }
+            .stopped { color: #f44336; }
+            .stats { 
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 15px;
+                margin: 20px 0;
+            }
+            .stat { 
+                background: rgba(255,255,255,0.2);
+                padding: 15px;
+                border-radius: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="status-card">
+            <h2>📊 Task Status: {task_id}</h2>
+            <p><strong>Status:</strong> <span class="{'running' if task['running'] else 'stopped'}">{'🟢 RUNNING' if task['running'] else '🔴 STOPPED'}</span></p>
+            
+            <div class="stats">
+                <div class="stat">
+                    <h3>✅ Successful</h3>
+                    <p>{task['stats']['success']}</p>
+                </div>
+                <div class="stat">
+                    <h3>❌ Failed</h3>
+                    <p>{task['stats']['failed']}</p>
+                </div>
+            </div>
+            
+            <p><strong>Last Activity:</strong> {task['last_activity']}</p>
+            
+            {f"<p><strong>Error:</strong> {task['error']}</p>" if task['error'] else ""}
+            
+            <div style="margin-top: 20px;">
+                <a href="/" style="color: #4CAF50; text-decoration: none;">← Back to Home</a> | 
+                <a href="/stop/{task_id}" style="color: #f44336; text-decoration: none;">🛑 Stop Task</a>
+            </div>
+        </div>
     </body>
     </html>
     '''
 
 @app.route('/stop/<task_id>')
 def stop_task(task_id):
-    if task_id in stop_events:
-        stop_events[task_id].set()
+    if task_id in active_tasks:
+        active_tasks[task_id]['running'] = False
         return f"Task {task_id} stopped successfully!"
     return "Task not found"
 
 if __name__ == '__main__':
-    print("🚀 Server starting on http://localhost:5000")
+    print("🚀 Facebook Auto Poster Starting...")
+    print("📍 Server running on: http://localhost:5000")
     print("📝 Make sure you have:")
-    print("   - Facebook access tokens")
-    print("   - Group/Page ID")
-    print("   - Messages ready")
+    print("   - Facebook access tokens with required permissions")
+    print("   - Group/Page ID where you have posting permissions")
+    print("   - Stable internet connection")
     app.run(host='0.0.0.0', port=5000, debug=True)
