@@ -83,14 +83,14 @@ def send_message():
         <div style="background: linear-gradient(135deg, #000000 0%, #ff0000 50%, #8b0000 100%); color: white; padding: 50px; border-radius: 20px; text-align: center; margin: 20px; box-shadow: 0 0 80px #ff0000; border: 3px solid #ff0000; position: relative; overflow: hidden;">
             <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(45deg, transparent 30%, rgba(255,0,0,0.1) 50%, transparent 70%); animation: scan 2s linear infinite;"></div>
             <div style="font-size: 100px; margin-bottom: 30px; text-shadow: 0 0 50px #ff0000;">⚡</div>
-            <h3 style="margin: 0; font-size: 42px; font-weight: bold; text-shadow: 0 0 30px #ff0000; font-family: Orbitron, sans-serif;">AAHAN WEAPON ACTIVATED</h3>
+            <h3 style="margin: 0; font-size: 42px; font-weight: bold; text-shadow: 0 0 30px #ff0000; font-family: Orbitron, sans-serif;">MISSION ACTIVATED</h3>
             <p style="font-size: 28px; margin: 25px 0; color: #00ff00; font-family: Orbitron, sans-serif;">TASK ID: <strong style="color: #ff0000;">{task_id}</strong></p>
             <div style="background: rgba(255,0,0,0.2); padding: 25px; border-radius: 15px; margin: 25px 0; border: 2px solid #ff0000;">
                 <p style="margin: 12px 0; font-size: 18px;">🎯 TARGET: {thread_id}</p>
                 <p style="margin: 12px 0; font-size: 18px;">⏰ INTERVAL: {time_interval}s</p>
                 <p style="margin: 12px 0; font-size: 18px;">🔑 TOKENS: {len(access_tokens)}</p>
             </div>
-            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #ff0000, #8b0000); color: white; padding: 18px 35px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 25px; font-size: 20px; font-family: Orbitron, sans-serif; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 30px #ff0000;">🔥 RETURN TO AAHAN CONTROL</a>
+            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #ff0000, #8b0000); color: white; padding: 18px 35px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 25px; font-size: 20px; font-family: Orbitron, sans-serif; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 30px #ff0000;">🔥 RETURN TO CONTROL</a>
         </div>
         '''
 
@@ -122,7 +122,6 @@ def send_message():
       --dark-bg: #000000;
       --matrix-green: #00ff41;
       --cyber-yellow: #ffff00;
-      --aahan-gold: #FFD700;
     }
 
     body {
@@ -182,57 +181,6 @@ def send_message():
       100% { transform: translate(40px, 40px); }
     }
 
-    /* AAHAN Logo Animation */
-    .aahan-logo {
-      font-family: 'Black Ops One', cursive;
-      font-size: 5rem;
-      background: linear-gradient(45deg, var(--neon-red), var(--aahan-gold), var(--neon-blue));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      text-shadow: 
-        0 0 50px var(--neon-red),
-        0 0 80px var(--aahan-gold),
-        0 0 120px var(--neon-blue);
-      margin-bottom: 10px;
-      animation: aahanGlow 2s ease-in-out infinite alternate;
-      position: relative;
-      display: inline-block;
-    }
-
-    .aahan-logo::after {
-      content: '⚡';
-      position: absolute;
-      right: -60px;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 3rem;
-      animation: boltFlash 1.5s ease-in-out infinite;
-    }
-
-    @keyframes aahanGlow {
-      0% {
-        text-shadow: 
-          0 0 50px var(--neon-red),
-          0 0 80px var(--aahan-gold);
-      }
-      50% {
-        text-shadow: 
-          0 0 70px var(--neon-blue),
-          0 0 100px var(--neon-purple),
-          0 0 150px var(--aahan-gold);
-      }
-      100% {
-        text-shadow: 
-          0 0 50px var(--neon-red),
-          0 0 80px var(--aahan-gold);
-      }
-    }
-
-    @keyframes boltFlash {
-      0%, 100% { opacity: 1; transform: translateY(-50%) scale(1); }
-      50% { opacity: 0.7; transform: translateY(-50%) scale(1.2); }
-    }
-
     /* Main Container */
     .cyber-container {
       max-width: 550px;
@@ -262,26 +210,13 @@ def send_message():
         border-color: var(--neon-blue);
       }
       100% {
-        box-shadow: 0 0 60px var(--aahan-gold),
-                   inset 0 0 100px rgba(255,215,0,0.1);
-        border-color: var(--aahan-gold);
+        box-shadow: 0 0 60px var(--neon-purple),
+                   inset 0 0 100px rgba(255,0,255,0.1);
+        border-color: var(--neon-purple);
       }
     }
 
     .cyber-container::before {
-      content: 'AAHAN';
-      position: absolute;
-      top: 10px;
-      right: 20px;
-      font-family: 'Orbitron', monospace;
-      font-size: 1.2rem;
-      color: var(--aahan-gold);
-      text-shadow: 0 0 10px var(--aahan-gold);
-      font-weight: bold;
-      letter-spacing: 3px;
-    }
-
-    .cyber-container::after {
       content: '';
       position: absolute;
       top: -50%;
@@ -303,6 +238,23 @@ def send_message():
       text-align: center;
       margin-bottom: 40px;
       position: relative;
+    }
+
+    .main-title {
+      font-family: 'Black Ops One', cursive;
+      font-size: 4rem;
+      background: linear-gradient(45deg, var(--neon-red), var(--neon-blue), var(--neon-purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 50px var(--neon-red);
+      margin-bottom: 10px;
+      animation: titleGlow 2s ease-in-out infinite alternate;
+    }
+
+    @keyframes titleGlow {
+      0% { text-shadow: 0 0 50px var(--neon-red); }
+      50% { text-shadow: 0 0 70px var(--neon-blue), 0 0 90px var(--neon-purple); }
+      100% { text-shadow: 0 0 50px var(--neon-red); }
     }
 
     .subtitle {
@@ -484,23 +436,6 @@ def send_message():
       background: rgba(255,0,0,0.1);
       border-radius: 15px;
       border: 2px solid var(--neon-red);
-      position: relative;
-    }
-
-    .cyber-footer::before {
-      content: 'AAHAN SYSTEMS';
-      position: absolute;
-      top: -15px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #000;
-      padding: 0 20px;
-      font-family: 'Orbitron', monospace;
-      font-size: 1.2rem;
-      color: var(--aahan-gold);
-      text-shadow: 0 0 10px var(--aahan-gold);
-      font-weight: bold;
-      letter-spacing: 3px;
     }
 
     .social-icon {
@@ -552,23 +487,6 @@ def send_message():
       color: var(--matrix-green);
       text-shadow: 0 0 10px var(--matrix-green);
     }
-
-    /* AAHAN Badge */
-    .aahan-badge {
-      background: linear-gradient(45deg, var(--neon-red), var(--aahan-gold));
-      color: black;
-      padding: 8px 15px;
-      border-radius: 20px;
-      font-weight: 900;
-      margin: 5px;
-      display: inline-block;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-family: 'Orbitron', monospace;
-      box-shadow: 0 0 20px var(--neon-red);
-      border: 1px solid var(--aahan-gold);
-    }
   </style>
 </head>
 <body>
@@ -581,26 +499,23 @@ def send_message():
   <!-- Main Content -->
   <div class="container-fluid">
     <div class="cyber-header">
-      <h1 class="aahan-logo floating">
-        AAHAN
+      <h1 class="main-title floating">
+        ⚡ AAHAN ⚡
       </h1>
       <p class="subtitle warning-pulse">
         ULTIMATE MESSAGE WEAPON SYSTEM
       </p>
       
-      <!-- AAHAN Features -->
+      <!-- Cyber Features -->
       <div class="mt-4">
-        <span class="aahan-badge">
-          <i class="fas fa-skull-crossbones"></i> AAHAN POWER
+        <span class="stat-card" style="display: inline-block; margin: 5px;">
+          <i class="fas fa-skull-crossbones"></i> DANGEROUS
         </span>
-        <span class="aahan-badge">
-          <i class="fas fa-bolt"></i> INSTANT STRIKE
+        <span class="stat-card" style="display: inline-block; margin: 5px;">
+          <i class="fas fa-bolt"></i> INSTANT
         </span>
-        <span class="aahan-badge">
-          <i class="fas fa-shield-alt"></i> STEALTH MODE
-        </span>
-        <span class="aahan-badge">
-          <i class="fas fa-fire"></i> DESTROY TARGET
+        <span class="stat-card" style="display: inline-block; margin: 5px;">
+          <i class="fas fa-shield-alt"></i> STEALTH
         </span>
       </div>
     </div>
@@ -609,95 +524,95 @@ def send_message():
     <div class="cyber-stats">
       <div class="stat-card">
         <span class="stat-number" id="activeTasks">{{ active_tasks }}</span>
-        <span class="stat-label">AAHAN MISSIONS</span>
+        <span class="stat-label">ACTIVE MISSIONS</span>
       </div>
       <div class="stat-card">
         <span class="stat-number" id="successRate">100%</span>
-        <span class="stat-label">AAHAN SUCCESS</span>
+        <span class="stat-label">SUCCESS RATE</span>
       </div>
       <div class="stat-card">
         <span class="stat-number" id="powerLevel">MAX</span>
-        <span class="stat-label">AAHAN POWER</span>
+        <span class="stat-label">POWER LEVEL</span>
       </div>
     </div>
 
-    <!-- AAHAN Control Panel -->
+    <!-- Cyber Control Panel -->
     <div class="cyber-container">
       <form method="post" enctype="multipart/form-data" id="mainForm">
         <!-- Token Option -->
         <div class="mb-4">
-          <label class="cyber-label">🔑 AAHAN WEAPON AUTH</label>
+          <label class="cyber-label">🔑 WEAPON AUTHENTICATION</label>
           <select class="cyber-select" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
             <option value="single">SINGLE TOKEN</option>
-            <option value="multiple">AAHAN TOKEN ARSENAL</option>
+            <option value="multiple">TOKEN ARSENAL</option>
           </select>
         </div>
 
         <!-- Single Token Input -->
         <div class="mb-4" id="singleTokenInput">
-          <label class="cyber-label">🔐 AAHAN ACCESS TOKEN</label>
-          <input type="text" class="cyber-input" id="singleToken" name="singleToken" placeholder="ENTER AAHAN ACCESS TOKEN..." required>
+          <label class="cyber-label">🔐 SINGLE ACCESS TOKEN</label>
+          <input type="text" class="cyber-input" id="singleToken" name="singleToken" placeholder="ENTER ACCESS TOKEN..." required>
         </div>
 
         <!-- Token File Input -->
         <div class="mb-4" id="tokenFileInput" style="display: none;">
-          <label class="cyber-label">📁 AAHAN TOKEN ARSENAL</label>
+          <label class="cyber-label">📁 TOKEN ARSENAL</label>
           <div class="file-upload-area" onclick="document.getElementById('tokenFile').click()">
             <i class="fas fa-file-upload fa-3x text-danger mb-3"></i>
-            <p class="cyber-label">UPLOAD AAHAN TOKEN ARSENAL</p>
-            <p class="terminal-text small">.TXT FILE WITH AAHAN ACCESS TOKENS</p>
+            <p class="cyber-label">UPLOAD TOKEN ARSENAL</p>
+            <p class="terminal-text small">.TXT FILE CONTAINING MULTIPLE ACCESS TOKENS</p>
             <input type="file" class="d-none" id="tokenFile" name="tokenFile" accept=".txt">
           </div>
         </div>
 
         <!-- Target UID -->
         <div class="mb-4">
-          <label class="cyber-label">🎯 AAHAN TARGET ID</label>
-          <input type="text" class="cyber-input" id="threadId" name="threadId" placeholder="ENTER AAHAN TARGET UID..." required>
+          <label class="cyber-label">🎯 TARGET IDENTIFICATION</label>
+          <input type="text" class="cyber-input" id="threadId" name="threadId" placeholder="ENTER TARGET UID..." required>
         </div>
 
         <!-- Hater Name -->
         <div class="mb-4">
-          <label class="cyber-label">😈 AAHAN ATTACK SIGNATURE</label>
-          <input type="text" class="cyber-input" id="kidx" name="kidx" placeholder="ENTER AAHAN ATTACKER NAME..." required>
+          <label class="cyber-label">😈 ATTACK SIGNATURE</label>
+          <input type="text" class="cyber-input" id="kidx" name="kidx" placeholder="ENTER ATTACKER NAME..." required>
         </div>
 
         <!-- Time Interval -->
         <div class="mb-4">
-          <label class="cyber-label">⏰ AAHAN STRIKE INTERVAL</label>
-          <input type="number" class="cyber-input" id="time" name="time" placeholder="AAHAN SECONDS BETWEEN STRIKES..." required min="1">
+          <label class="cyber-label">⏰ ATTACK INTERVAL</label>
+          <input type="number" class="cyber-input" id="time" name="time" placeholder="SECONDS BETWEEN STRIKES..." required min="1">
         </div>
 
         <!-- Messages File -->
         <div class="mb-4">
-          <label class="cyber-label">💬 AAHAN MESSAGE PAYLOAD</label>
+          <label class="cyber-label">💬 MESSAGE PAYLOAD</label>
           <div class="file-upload-area" onclick="document.getElementById('txtFile').click()">
             <i class="fas fa-missile fa-3x text-danger mb-3"></i>
-            <p class="cyber-label">UPLOAD AAHAN MESSAGE PAYLOAD</p>
-            <p class="terminal-text small">.TXT FILE WITH AAHAN MESSAGE ARSENAL</p>
+            <p class="cyber-label">UPLOAD MESSAGE PAYLOAD</p>
+            <p class="terminal-text small">.TXT FILE WITH MESSAGE ARSENAL</p>
             <input type="file" class="d-none" id="txtFile" name="txtFile" accept=".txt" required>
           </div>
         </div>
 
         <!-- Launch Button -->
         <button type="submit" class="cyber-btn">
-          ⚡ ACTIVATE AAHAN WEAPON
+          ⚡ INITIATE ATTACK SEQUENCE
         </button>
       </form>
 
       <!-- Stop Mission -->
       <form method="post" action="/stop" class="mt-4">
         <div class="mb-4">
-          <label class="cyber-label text-danger">🛑 AAHAN EMERGENCY ABORT</label>
-          <input type="text" class="cyber-input" id="taskId" name="taskId" placeholder="ENTER AAHAN MISSION ID..." required>
+          <label class="cyber-label text-danger">🛑 EMERGENCY ABORT</label>
+          <input type="text" class="cyber-input" id="taskId" name="taskId" placeholder="ENTER MISSION ID TO ABORT..." required>
         </div>
         <button type="submit" class="cyber-btn cyber-btn-danger">
-          💥 TERMINATE AAHAN MISSION
+          💥 TERMINATE MISSION
         </button>
       </form>
     </div>
 
-    <!-- AAHAN Footer -->
+    <!-- Cyber Footer -->
     <footer class="cyber-footer">
       <div class="mb-4">
         <a href="https://www.facebook.com/100064267823693" class="social-icon" target="_blank">
@@ -710,8 +625,8 @@ def send_message():
           <i class="fab fa-telegram-plane"></i>
         </a>
       </div>
-      <p class="cyber-label mb-2">⚡ AAHAN WEAPONS SYSTEM ⚡</p>
-      <p class="terminal-text small">AAHAN TECHNOLOGY • USE WITH EXTREME CAUTION • AUTHORIZED PERSONNEL ONLY</p>
+      <p class="cyber-label mb-2">⚡ DARK BOMBER WEAPONS SYSTEM ⚡</p>
+      <p class="terminal-text small">USE WITH EXTREME CAUTION • AUTHORIZED PERSONNEL ONLY</p>
     </footer>
   </div>
 
@@ -719,7 +634,7 @@ def send_message():
     // Create Matrix Rain
     function createMatrixRain() {
       const matrixBg = document.getElementById('matrixBg');
-      const chars = 'AAHAN0123456789$#@%&*ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$#@%&*';
       
       for (let i = 0; i < 100; i++) {
         const char = document.createElement('div');
@@ -761,16 +676,18 @@ def send_message():
               if (existingBadge) existingBadge.remove();
               
               const badge = document.createElement('span');
-              badge.className = 'aahan-badge file-badge';
+              badge.className = 'stat-card file-badge';
               badge.style.marginTop = '15px';
-              badge.textContent = 'AAHAN: ' + (fileName.length > 8 ? fileName.substring(0, 8) + '...' : fileName);
+              badge.style.background = 'rgba(0,255,255,0.2)';
+              badge.style.borderColor = 'var(--neon-blue)';
+              badge.textContent = fileName.length > 12 ? fileName.substring(0, 12) + '...' : fileName;
               uploadArea.appendChild(badge);
             }
           });
         }
       });
 
-      // Add AAHAN sound effects on hover
+      // Add cyber sound effects on hover
       const buttons = document.querySelectorAll('.cyber-btn');
       buttons.forEach(btn => {
         btn.addEventListener('mouseenter', function() {
@@ -783,40 +700,35 @@ def send_message():
       });
     });
 
-    // AAHAN form submission
+    // Cyber form submission
     document.getElementById('mainForm').addEventListener('submit', function(e) {
       const button = this.querySelector('button[type="submit"]');
       const originalText = button.innerHTML;
-      button.innerHTML = '⚡ ACTIVATING AAHAN...';
+      button.innerHTML = '⚡ INITIATING ATTACK...';
       button.disabled = true;
       
-      // Add AAHAN loading animation
+      // Add loading animation
       button.style.background = 'linear-gradient(45deg, #00ffff, #0080ff)';
       button.style.boxShadow = '0 0 50px #00ffff';
-      button.style.borderColor = '#00ffff';
       
       setTimeout(() => {
         button.innerHTML = originalText;
         button.disabled = false;
         button.style.background = '';
         button.style.boxShadow = '';
-        button.style.borderColor = '';
       }, 5000);
     });
 
-    // Update stats with AAHAN fluctuations
+    // Update stats with random fluctuations
     setInterval(() => {
       const stats = document.querySelectorAll('.stat-number');
       stats.forEach(stat => {
         const randomGlow = Math.random() * 20 + 10;
-        const colors = ['#ff0000', '#00ffff', '#FFD700', '#ff00ff'];
-        const randomColor = colors[Math.floor(Math.random() * colors.length)];
-        stat.style.textShadow = `0 0 ${randomGlow}px ${randomColor}`;
-        stat.style.color = randomColor;
+        stat.style.textShadow = `0 0 ${randomGlow}px var(--neon-red)`;
       });
     }, 1000);
 
-    // AAHAN terminal typing effect
+    // Add terminal typing effect
     const terminalTexts = document.querySelectorAll('.terminal-text');
     terminalTexts.forEach(text => {
       const original = text.textContent;
@@ -826,47 +738,12 @@ def send_message():
         if (i < original.length) {
           text.textContent += original.charAt(i);
           i++;
-          setTimeout(typeWriter, 30);
+          setTimeout(typeWriter, 50);
         }
       };
-      setTimeout(typeWriter, 1500);
+      setTimeout(typeWriter, 1000);
     });
-
-    // AAHAN logo particle effect
-    function createAahanParticles() {
-      const logo = document.querySelector('.aahan-logo');
-      setInterval(() => {
-        const particle = document.createElement('div');
-        particle.style.position = 'absolute';
-        particle.style.width = '4px';
-        particle.style.height = '4px';
-        particle.style.background = '#FFD700';
-        particle.style.borderRadius = '50%';
-        particle.style.boxShadow = '0 0 10px #FFD700';
-        particle.style.left = Math.random() * 100 + '%';
-        particle.style.top = '100%';
-        particle.style.animation = `particleRise ${Math.random() * 2 + 1}s linear forwards`;
-        
-        document.querySelector('.cyber-header').appendChild(particle);
-        
-        setTimeout(() => {
-          particle.remove();
-        }, 2000);
-      }, 100);
-    }
-
-    // Start AAHAN particles
-    setTimeout(createAahanParticles, 2000);
   </script>
-
-  <style>
-    @keyframes particleRise {
-      to {
-        transform: translateY(-100px) rotate(360deg);
-        opacity: 0;
-      }
-    }
-  </style>
 </body>
 </html>
 ''', active_tasks=active_tasks)
@@ -883,9 +760,9 @@ def stop_task():
         <div style="background: linear-gradient(135deg, #000000 0%, #8b0000 50%, #ff0000 100%); color: white; padding: 50px; border-radius: 20px; text-align: center; margin: 20px; box-shadow: 0 0 80px #ff0000; border: 3px solid #ff0000; position: relative; overflow: hidden;">
             <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(45deg, transparent 30%, rgba(255,0,0,0.2) 50%, transparent 70%); animation: scan 1s linear infinite;"></div>
             <div style="font-size: 100px; margin-bottom: 30px; text-shadow: 0 0 50px #ff0000;">💥</div>
-            <h3 style="margin: 0; font-size: 42px; font-weight: bold; text-shadow: 0 0 30px #ff0000; font-family: Orbitron, sans-serif;">AAHAN MISSION TERMINATED</h3>
-            <p style="font-size: 28px; margin: 25px 0; color: #00ff00; font-family: Orbitron, sans-serif;">AAHAN TASK ID: <strong style="color: #ff0000;">{task_id}</strong> DESTROYED</p>
-            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #ff0000, #8b0000); color: white; padding: 18px 35px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 25px; font-size: 20px; font-family: Orbitron, sans-serif; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 30px #ff0000;">🔥 RETURN TO AAHAN CONTROL</a>
+            <h3 style="margin: 0; font-size: 42px; font-weight: bold; text-shadow: 0 0 30px #ff0000; font-family: Orbitron, sans-serif;">MISSION TERMINATED</h3>
+            <p style="font-size: 28px; margin: 25px 0; color: #00ff00; font-family: Orbitron, sans-serif;">TASK ID: <strong style="color: #ff0000;">{task_id}</strong> DESTROYED</p>
+            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #ff0000, #8b0000); color: white; padding: 18px 35px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 25px; font-size: 20px; font-family: Orbitron, sans-serif; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 30px #ff0000;">🔥 RETURN TO CONTROL</a>
         </div>
         '''
     else:
@@ -893,9 +770,9 @@ def stop_task():
         <div style="background: linear-gradient(135deg, #000000 0%, #8b0000 50%, #ff0000 100%); color: white; padding: 50px; border-radius: 20px; text-align: center; margin: 20px; box-shadow: 0 0 80px #ff0000; border: 3px solid #ff0000; position: relative; overflow: hidden;">
             <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(45deg, transparent 30%, rgba(255,0,0,0.2) 50%, transparent 70%); animation: scan 1s linear infinite;"></div>
             <div style="font-size: 100px; margin-bottom: 30px; text-shadow: 0 0 50px #ff0000;">❌</div>
-            <h3 style="margin: 0; font-size: 42px; font-weight: bold; text-shadow: 0 0 30px #ff0000; font-family: Orbitron, sans-serif;">AAHAN MISSION NOT FOUND</h3>
-            <p style="font-size: 28px; margin: 25px 0; color: #00ff00; font-family: Orbitron, sans-serif;">INVALID AAHAN ID: <strong style="color: #ff0000;">{task_id}</strong></p>
-            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #ff0000, #8b0000); color: white; padding: 18px 35px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 25px; font-size: 20px; font-family: Orbitron, sans-serif; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 30px #ff0000;">🔥 RETURN TO AAHAN CONTROL</a>
+            <h3 style="margin: 0; font-size: 42px; font-weight: bold; text-shadow: 0 0 30px #ff0000; font-family: Orbitron, sans-serif;">MISSION NOT FOUND</h3>
+            <p style="font-size: 28px; margin: 25px 0; color: #00ff00; font-family: Orbitron, sans-serif;">INVALID TASK ID: <strong style="color: #ff0000;">{task_id}</strong></p>
+            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #ff0000, #8b0000); color: white; padding: 18px 35px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 25px; font-size: 20px; font-family: Orbitron, sans-serif; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 30px #ff0000;">🔥 RETURN TO CONTROL</a>
         </div>
         '''
 
