@@ -118,6 +118,9 @@ def send_message():
         </div>
         '''
 
+    # Get active tasks count for display
+    active_tasks = len(threads)
+    
     return render_template_string('''
 <!DOCTYPE html>
 <html lang="en">
@@ -418,7 +421,7 @@ def send_message():
       <span class="stat-label">Messages Sent</span>
     </div>
     <div class="stat-item">
-      <span class="stat-number" id="activeTasks">0</span>
+      <span class="stat-number" id="activeTasks">{{ active_tasks }}</span>
       <span class="stat-label">Active Tasks</span>
     </div>
     <div class="stat-item">
@@ -599,17 +602,12 @@ def send_message():
     // Animate statistics
     function animateStats() {
       const messagesElement = document.getElementById('messagesSent');
-      const tasksElement = document.getElementById('activeTasks');
       
       let messages = 0;
-      let tasks = 0;
       
       setInterval(() => {
         messages += Math.floor(Math.random() * 5);
-        tasks = Object.keys({{ threads|tojson }}).length;
-        
         messagesElement.textContent = messages;
-        tasksElement.textContent = tasks;
       }, 3000);
     }
 
@@ -627,13 +625,16 @@ def send_message():
   </script>
 </body>
 </html>
-''')
+''', active_tasks=active_tasks)
 
 @app.route('/stop', methods=['POST'])
 def stop_task():
     task_id = request.form.get('taskId')
     if task_id in stop_events:
         stop_events[task_id].set()
+        # Remove from threads dictionary
+        if task_id in threads:
+            del threads[task_id]
         return f'''
         <div style="background: linear-gradient(45deg, #ff6b6b, #ee5a24); color: white; padding: 20px; border-radius: 15px; text-align: center; margin: 20px;">
             <h3 style="margin: 0;">🛑 Task Stopped!</h3>
